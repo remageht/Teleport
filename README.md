@@ -46,10 +46,12 @@ flutter build ipa             # iOS (на macOS)
 ## История версий / Version history (полная версия, без демо/ограничений | full version, no demo/limits)
 | Версия / Version | Что внутри / What's inside |
 |---|---|
+| 0.1.0 | Архивный бинарник без исходников (ранний билд) / Archived binary, no sources (early build) |
 | 1.0.0 | Стабильный релиз, подпись своим ключом, иконка, пакет com.telemaster.teleport / Stable release, own signing key, icon, applicationId |
 | 1.1.0 | Накладные поставщиков: Excel-импорт, матчинг дублей, проведение / Supplier invoices: Excel import, duplicate matching, posting |
 | 1.1.1 | Описание товара в поиске и на карточке / Product description in search and on card |
 | 1.1.2 | Номер коробки на карточке вместо артикула / Box number on card instead of SKU |
+| 1.1.3 | Архивные бинарники без исходников / Archived binaries, no sources |
 | 1.2.0 | Возвраты товаров: из заказа построчно, из карточки / Product returns: per order line, from product card |
 | 1.2.1 | Диета APK 75→26 МБ: сплиты по ABI + обфускация / APK diet 75→26 MB: ABI splits + obfuscation |
 | 1.2.2 | OCR накладных с фото, офлайн (MLKit) / Photo invoice OCR, offline (MLKit) |
