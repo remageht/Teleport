@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../models/trade.dart';
@@ -185,22 +184,6 @@ class ReceiptPrinter {
   }
 
   String _f(double v) => v.toStringAsFixed(2);
-}
-
-/// GPS-фиксация визитов: широта/долгота при чек-ине у клиента.
-class GeoService {
-  Future<({double lat, double lng})?> currentPosition() async {
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) {
-      perm = await Geolocator.requestPermission();
-    }
-    if (perm == LocationPermission.denied ||
-        perm == LocationPermission.deniedForever) {
-      return null;
-    }
-    final pos = await Geolocator.getCurrentPosition();
-    return (lat: pos.latitude, lng: pos.longitude);
-  }
 }
 
 /// Сканер штрихкодов: камера (mobile_scanner) или HID/клавиатурный сканер.

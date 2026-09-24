@@ -58,6 +58,7 @@ android/key.properties
 *.db-journal
 backups/
 dist/
+dist-archive/
 release/
 
 # TelePort: локальный мусор

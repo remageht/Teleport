@@ -1,7 +1,7 @@
 name: radiotrade
 description: RadioTrade — мобильная торговля радиокомпонентами (pre-selling / van-selling).
 publish_to: "none"
-version: 1.2.6+21
+version: 1.2.7+22
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -30,8 +30,6 @@ dependencies:
   mobile_scanner: ^5.1.1
   # Bluetooth-принтер (ESC/POS)
   print_bluetooth_thermal: ^1.0.9
-  # Геолокация
-  geolocator: ^12.0.0
   # Фото товаров с камеры
   image_picker: ^1.1.2
   # Экспорт продаж в Excel

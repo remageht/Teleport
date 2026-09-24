@@ -1,11 +1,21 @@
 # Сборка дистрибутива ТелеПорт: dist/ с exe-папкой и apk
 # Версия дистрибутива — в одном месте.
 param([string]$Root = 'C:\dev\radiotrade')
-$Ver = '1.2.6'
+$Ver = '1.2.7'
 
 Stop-Process -Name TelePort -Force -ErrorAction SilentlyContinue
 
 $dist = Join-Path $Root 'dist'
+# Архивация предыдущего dist, чтобы старые версии не терялись.
+if (Test-Path $dist) {
+  $archRoot = Join-Path $Root 'dist-archive'
+  New-Item -ItemType Directory -Path $archRoot -Force | Out-Null
+  $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+  Copy-Item $dist (Join-Path $archRoot "dist_$stamp") -Recurse -Force
+  # Храним 5 последних архивов.
+  Get-ChildItem $archRoot -Directory | Sort-Object Name -Descending |
+    Select-Object -Skip 5 | Remove-Item -Recurse -Force
+}
 # Снос с ретраями: свежезакрытый exe/антивирус могут держать файлы пару секунд.
 for ($i = 0; $i -lt 3 -and (Test-Path $dist); $i++) {
   Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue

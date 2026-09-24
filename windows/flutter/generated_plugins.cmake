@@ -5,7 +5,6 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
   file_selector_windows
-  geolocator_windows
   print_bluetooth_thermal
   share_plus
   sqlite3_flutter_libs
