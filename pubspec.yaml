@@ -1,0 +1,66 @@
+name: radiotrade
+description: RadioTrade — мобильная торговля радиокомпонентами (pre-selling / van-selling).
+publish_to: "none"
+version: 1.2.6+21
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  # Состояние и DI
+  provider: ^6.1.2
+  # Локальная БД (Android/iOS/desktop через sqlite3)
+  sqflite: ^2.3.3
+  sqflite_common_ffi: ^2.3.3
+  sqlite3_flutter_libs: ^0.5.24
+  path: ^1.9.0
+  path_provider: ^2.1.3
+  # Сеть / синхронизация
+  http: ^1.2.1
+  connectivity_plus: ^6.0.3
+  # OCR накладных с фото (on-device, офлайн)
+  google_mlkit_text_recognition: ^0.14.0
+  # Манипуляции с фото (поворот, EXIF, сжатие)
+  image: ^4.3.0
+  # Штрихкоды / QR
+  mobile_scanner: ^5.1.1
+  # Bluetooth-принтер (ESC/POS)
+  print_bluetooth_thermal: ^1.0.9
+  # Геолокация
+  geolocator: ^12.0.0
+  # Фото товаров с камеры
+  image_picker: ^1.1.2
+  # Экспорт продаж в Excel
+  excel: ^4.0.6
+  # Отправка файла (телефон)
+  share_plus: ^10.1.2
+  # Утилиты
+  intl: ^0.20.3
+  uuid: ^4.4.0
+  shared_preferences: ^2.2.3
+  package_info_plus: ^9.0.1
+  file_selector: ^1.1.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon/teleport_icon.png"
+  adaptive_icon_background: "#C8102E"
+  adaptive_icon_foreground: "assets/icon/teleport_icon_fg.png"
+
+flutter_native_splash:
+  color: "#F3E6CC"
+  image: "assets/icon/teleport_icon.png"
+  android: true
