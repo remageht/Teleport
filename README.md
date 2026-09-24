@@ -42,23 +42,3 @@ flutter build ipa             # iOS (на macOS)
 `POST /push` — пачка изменений из outbox, ответ `{accepted: [id], stocks: [...]}`.
 `GET /pull?cursor_products=&cursor_clients=&cursor_stocks=` — изменённые справочники.
 Адрес задаётся в настройках приложения. Пример HTTP-сервиса 1С — см. `docs/1c_gateway.md`.
-
-## История версий / Version history (полная версия, без демо/ограничений | full version, no demo/limits)
-| Версия / Version | Что внутри / What's inside |
-|---|---|
-| 1.0.0 | Стабильный релиз, подпись своим ключом, иконка, пакет com.telemaster.teleport / Stable release, own signing key, icon, applicationId |
-| 1.1.0 | Накладные поставщиков: Excel-импорт, матчинг дублей, проведение / Supplier invoices: Excel import, duplicate matching, posting |
-| 1.1.1 | Описание товара в поиске и на карточке / Product description in search and on card |
-| 1.1.2 | Номер коробки на карточке вместо артикула / Box number on card instead of SKU |
-| 1.2.0 | Возвраты товаров: из заказа построчно, из карточки / Product returns: per order line, from product card |
-| 1.2.1 | Диета APK 75→26 МБ: сплиты по ABI + обфускация / APK diet 75→26 MB: ABI splits + obfuscation |
-| 1.2.2 | OCR накладных с фото, офлайн (MLKit) / Photo invoice OCR, offline (MLKit) |
-| 1.2.3 | Выбор фото через системный picker, фикс галереи / System file picker, gallery fix |
-| 1.2.4 | Проверка работы Gemini: тесты парсера, keep-правила R8 / Gemini check: parser tests, R8 keep rules |
-| 1.2.5 | Онлайн-распознавание через Gemini (удалено в 1.2.6) / Online Gemini OCR (removed in 1.2.6) |
-| 1.2.6 | Офлайн-парсер усилен: штрихкоды, мусорные строки, матчинг по транслиту / Offline parser hardened: barcodes, junk lines, translit matching |
-
-Каждый новый релиз: коммит + тег `vX.Y.Z` + GitHub Release с
-`TelePort_X_Windows_x64.zip` и `TelePort_X_Android_arm64-v8a.apk`.
-Each new release: commit + tag `vX.Y.Z` + GitHub Release with
-`TelePort_X_Windows_x64.zip` and `TelePort_X_Android_arm64-v8a.apk`.

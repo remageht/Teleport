@@ -16,12 +16,10 @@ import '../../../data/db/app_db.dart';
 import '../../../services/lan_sync.dart';
 import '../shared/app_background.dart';
 import '../prices/price_lists_screen.dart';
-import '../receipts/receipts_screen.dart';
 
 /// Настройки: тема, Wi-Fi-синхронизация ПК ⇄ телефон, 1С-шлюз, выход.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
-
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
@@ -183,7 +181,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     // Не гасим сервер при уходе с экрана — им пользуются с другого устройства.
-    _host.dispose();
     super.dispose();
   }
 
@@ -349,16 +346,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       builder: (_) => const PriceListsScreen())),
               icon: const Icon(Icons.discount_outlined),
               label: const Text('Прайсы и скидки'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const ReceiptsScreen())),
-              icon:
-                  const Icon(Icons.receipt_long_outlined),
-              label: const Text('Накладные поставщиков'),
             ),
             const SizedBox(height: 8),
             Row(

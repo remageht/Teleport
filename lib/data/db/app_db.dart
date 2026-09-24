@@ -3,26 +3,17 @@ import 'dart:io';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../models/catalog.dart';
 import '../../models/trade.dart';
-import '../../services/devices.dart';
 
 /// Локальная SQLite-БД. Offline-first: все данные лежат здесь,
 /// сервер только источник/приёмник синхронизации.
-///
-/// Безопасность обновлений: перед миграцией на новую версию схемы
-/// делается автоматический бэкап файла (папка backups, хранятся 3
-/// последних), после — проверка целостности (есть таблица товаров).
 class AppDb {
   AppDb._();
   static final AppDb instance = AppDb._();
-
-  /// Текущая версия схемы. Поднимать вместе с version в openDatabase.
-  static const kDbVersion = 7;
 
   Database? _db;
   Database get database => _db!;
@@ -34,7 +25,8 @@ class AppDb {
   Future<Database> open() async {
     if (_db != null) return _db!;
     final dir = await getApplicationSupportDirectory();
-    _dbPath = p.join(dir.path, 'radiotrade.db');    // Переезд 1.0.0: новый ID приложения = новая папка данных.
+    _dbPath = p.join(dir.path, 'radiotrade.db');
+    // Переезд 1.0.0: новый ID приложения = новая папка данных.
     // Если своей базы ещё нет, подхватываем самую свежую старую.
     if (Platform.isWindows && !File(_dbPath!).existsSync()) {
       await Directory(p.dirname(_dbPath!)).create(recursive: true);
@@ -59,15 +51,9 @@ class AppDb {
         }
       }
     }
-    // Бэкап перед возможной миграцией — данные человека не должны слететь.
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await backupBeforeUpgrade(
-          dir.path, prefs.getInt('db_version') ?? 0);
-    } catch (_) {}
     _db = await openDatabase(
       _dbPath!,
-      version: kDbVersion,
+      version: 6,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -105,56 +91,9 @@ class AppDb {
               'CREATE INDEX IF NOT EXISTS idx_moves_product ON moves(product_id)');
           await _ensurePriceLists(db);
         }
-        if (oldV < 7) {
-          // Журнал приходных накладных + привязка движений к накладной.
-          await db.execute('''
-            CREATE TABLE IF NOT EXISTS receipt_docs (
-              id TEXT PRIMARY KEY, number TEXT, supplier TEXT,
-              photo_path TEXT, total REAL DEFAULT 0,
-              created_at TEXT
-            )''');
-          await db.execute(
-              'ALTER TABLE moves ADD COLUMN receipt_id TEXT DEFAULT NULL');
-        }
       },
     );
-    // После открытия: проверка целостности + запоминание версии схемы.
-    try {
-      await _db!.rawQuery(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'");
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('db_version', kDbVersion);
-    } catch (_) {}
     return _db!;
-  }
-
-  /// Автобэкап перед миграцией схемы: копия файла в backups/
-  /// (хранятся 3 последних). Вызывать до openDatabase при upgrade.
-  Future<void> backupBeforeUpgrade(
-      String dirPath, int knownVersion) async {
-    if (knownVersion >= kDbVersion) return;
-    final f = File(_dbPath!);
-    if (!f.existsSync()) return;
-    try {
-      final bakDir = Directory(p.join(dirPath, 'backups'));
-      await bakDir.create(recursive: true);
-      final stamp =
-          DateTime.now().toIso8601String().replaceAll(':', '-');
-      await f.copy(p.join(
-          bakDir.path, 'pre_v${kDbVersion}_$stamp.db'));
-      final old = await bakDir
-          .list()
-          .where((e) => e is File)
-          .cast<File>()
-          .toList();
-      old.sort((a, b) => a.path.compareTo(b.path));
-      // Храним 3 последних бэкапа, остальное удаляем.
-      for (var i = 0; i < old.length - 3; i++) {
-        try {
-          await old[i].delete();
-        } catch (_) {}
-      }
-    } catch (_) {}
   }
 
   /// Полная (пере)создача таблиц каталога + сид данных магазина.
@@ -269,13 +208,7 @@ class AppDb {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id TEXT NOT NULL, type TEXT NOT NULL,
         qty REAL DEFAULT 0, price REAL DEFAULT 0,
-        note TEXT, receipt_id TEXT, created_at TEXT
-      )''');
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS receipt_docs (
-        id TEXT PRIMARY KEY, number TEXT, supplier TEXT,
-        photo_path TEXT, total REAL DEFAULT 0,
-        created_at TEXT
+        note TEXT, created_at TEXT
       )''');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_moves_product ON moves(product_id)');
@@ -323,8 +256,7 @@ class AppDb {
       int limit = 200}) async {
     var sql = '''
       SELECT p.*, IFNULL(pi.price, 0) AS price,
-             IFNULL(s.available, 0) AS available,
-             IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
+             IFNULL(s.available, 0) AS available
       FROM products p
       LEFT JOIN price_items pi
         ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
@@ -374,8 +306,7 @@ class AppDb {
   Future<Product?> findByBarcode(String code) async {
     final rows = await database.rawQuery('''
       SELECT p.*, IFNULL(pi.price,0) AS price,
-             IFNULL((SELECT SUM(qty-reserved) FROM stocks WHERE product_id = p.id),0) AS available,
-             IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
+             IFNULL((SELECT SUM(qty-reserved) FROM stocks WHERE product_id = p.id),0) AS available
       FROM products p
       LEFT JOIN price_items pi ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
       WHERE p.barcode = ? OR p.sku = ? LIMIT 1
@@ -797,7 +728,6 @@ class AppDb {
     required double qty,
     double price = 0,
     String? note,
-    String? receiptId,
   }) async {
     await database.insert('moves', {
       'product_id': productId,
@@ -805,7 +735,6 @@ class AppDb {
       'qty': qty,
       'price': price,
       'note': note,
-      'receipt_id': receiptId,
       'created_at': DateTime.now().toIso8601String(),
     });
   }
@@ -827,7 +756,6 @@ class AppDb {
     double buyPrice = 0,
     String? cell,
     String? note,
-    String? receiptId,
   }) async {
     final rows = await database.query('stocks',
         columns: ['cell'],
@@ -859,119 +787,8 @@ class AppDb {
         type: 'receipt',
         qty: qty,
         price: buyPrice,
-        note: note,
-        receiptId: receiptId);
+        note: note);
     await touch(productId);
-  }
-
-  // ---- Накладные (журнал приёмок) ----
-
-  Future<String> createReceipt(
-      {String? number, String? supplier, String? photoPath}) async {
-    final id = 'rc-${DateTime.now().millisecondsSinceEpoch}';
-    await database.insert('receipt_docs', {
-      'id': id,
-      'number': number,
-      'supplier': supplier,
-      'photo_path': photoPath,
-      'total': 0,
-      'created_at': DateTime.now().toIso8601String(),
-    });
-    return id;
-  }
-
-  Future<List<Map<String, Object?>>> receipts() async {
-    return database.query('receipt_docs', orderBy: 'created_at DESC');
-  }
-
-  Future<List<Map<String, Object?>>> receiptMoves(String receiptId) async {
-    return database.rawQuery('''
-      SELECT m.*, p.name AS pname, p.sku AS sku
-      FROM moves m LEFT JOIN products p ON p.id = m.product_id
-      WHERE m.receipt_id = ? ORDER BY m.id
-    ''', [receiptId]);
-  }
-
-  Future<void> setReceiptPhoto(String id, String path) async {
-    await database.update('receipt_docs', {'photo_path': path},
-        where: 'id = ?', whereArgs: [id]);
-  }
-
-  // ---- Поиск дублей (накладные, приёмка) ----
-
-  /// Нормализация названия для сравнения: верхниий регистр,
-  /// только буквы и цифры.
-  static String normName(String s) =>
-      s.toUpperCase().replaceAll(RegExp(r'[^A-ZА-Я0-9]'), '');
-
-  /// Товар целиком по id (с ценой и остатком).
-  Future<Product?> productById(String id) async {
-    final rows = await database.rawQuery('''
-      SELECT p.*, IFNULL(pi.price,0) AS price,
-             IFNULL((SELECT SUM(qty-reserved) FROM stocks WHERE product_id = p.id),0) AS available,
-             IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
-      FROM products p
-      LEFT JOIN price_items pi ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
-      WHERE p.id = ? LIMIT 1
-    ''', [id]);
-    return rows.isEmpty ? null : Product.fromRow(rows.first);
-  }
-
-  /// Подбор позиции из базы под строку накладной:
-  /// exact — полное совпадение нормализованного названия (количество
-  /// просто плюсуется), similar — до 4 похожих на выбор.
-  /// OCR с фото возвращает латиницу вместо кириллицы, поэтому каждое
-  /// название базы сравнивается дважды: как есть и в транслите.
-  Future<({Product? exact, List<Product> similar})> matchProduct(
-      String name) async {
-    final norm = normName(name);
-    if (norm.isEmpty) return (exact: null, similar: <Product>[]);
-    final rows = await database
-        .query('products', where: 'is_active = 1', limit: 2000);
-    Product? exact;
-    String exactNorm = '';
-    final scored = <String, double>{};
-    final tokens = norm
-        .split(RegExp(r'(?<=[A-ZА-Я])(?=\d)|(?<=\d)(?=[A-ZА-Я])|_'))
-        .where((t) => t.length >= 2)
-        .toList();
-    double coverage(String haystack) {
-      var hit = 0;
-      for (final t in tokens) {
-        if (haystack.contains(t)) hit += t.length;
-      }
-      return hit / norm.length;
-    }
-
-    for (final r in rows) {
-      final id = r['id'] as String;
-      final dbName = (r['name'] as String?) ?? '';
-      final n = normName(dbName);
-      if (n.isEmpty) continue;
-      // Вторая форма — транслит (для OCR-латиницы).
-      final nt = normName(ReceiptPrinter.translit(dbName));
-      if (n == norm || nt == norm) {
-        exact = await productById(id);
-        exactNorm = n;
-        continue;
-      }
-      final score =
-          coverage(n) > coverage(nt) ? coverage(n) : coverage(nt);
-      if (score >= 0.5 &&
-          (exact == null ||
-              (n != exactNorm && nt != normName(exact.name)))) {
-        final prev = scored[id] ?? 0;
-        if (score > prev) scored[id] = score;
-      }
-    }
-    final top = scored.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    final similar = <Product>[];
-    for (final e in top.take(4)) {
-      final p = await productById(e.key);
-      if (p != null && p.id != exact?.id) similar.add(p);
-    }
-    return (exact: exact, similar: similar);
   }
 
   // ---- Свои штрихкоды ----
@@ -1157,8 +974,7 @@ class AppDb {
   Future<List<Product>> popularProducts({int limit = 5}) async {
     final rows = await database.rawQuery('''
       SELECT p.*, IFNULL(pi.price,0) AS price,
-             IFNULL(s.available,0) AS available,
-             IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
+             IFNULL(s.available,0) AS available
       FROM products p
       LEFT JOIN price_items pi ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
       LEFT JOIN (SELECT product_id, SUM(qty-reserved) AS available FROM stocks GROUP BY product_id) s
@@ -1177,51 +993,6 @@ class AppDb {
       ON CONFLICT(product_id, warehouse_id, series, cell)
       DO UPDATE SET qty = ?
     ''', [productId, cell, qty, qty]);
-  }
-
-  /// Учесть возврат товара: плюс остаток, минус счётчик популярности,
-  /// запись в историю движений.
-  Future<void> registerReturn(String productId, double qty,
-      {double price = 0, String? note}) async {
-    final rows = await database.query('stocks',
-        columns: ['cell'],
-        where: "product_id = ? AND warehouse_id = 'wh-shop'",
-        whereArgs: [productId],
-        limit: 1);
-    if (rows.isEmpty) {
-      await database.insert('stocks', {
-        'product_id': productId,
-        'warehouse_id': 'wh-shop',
-        'series': null,
-        'cell': 'Возвраты',
-        'qty': qty,
-        'reserved': 0,
-      });
-    } else {
-      await database.rawUpdate(
-          'UPDATE stocks SET qty = qty + ? WHERE product_id = ? '
-          "AND warehouse_id = 'wh-shop' AND IFNULL(cell,'') = IFNULL(?, '')",
-          [qty, productId, rows.first['cell']]);
-    }
-    await database.execute(
-        'UPDATE products SET sold_count = MAX(0, sold_count - ?) WHERE id = ?',
-        [qty.toInt(), productId]);
-    await logMove(
-        productId: productId,
-        type: 'return',
-        qty: qty,
-        price: price,
-        note: note);
-    await touch(productId);
-  }
-
-  /// Сколько уже вернули по заказу (по примечанию с номером).
-  Future<double> returnedQty(String orderNumber, String productId) async {
-    final rows = await database.rawQuery(
-        "SELECT SUM(qty) AS q FROM moves WHERE product_id = ? AND type = 'return' "
-        'AND IFNULL(note,\'\') LIKE ?',
-        [productId, '%$orderNumber%']);
-    return (rows.first['q'] as num?)?.toDouble() ?? 0;
   }
 
   /// Учесть продажу: минус остаток, плюс счётчик популярности,

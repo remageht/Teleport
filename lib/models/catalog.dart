@@ -20,7 +20,6 @@ class Product {
   // Транзитные поля — заполняются JOIN-запросом, не хранятся в таблице.
   final double price; // цена из прайс-листа (0 = по запросу)
   final double available; // доступный остаток по всем складам
-  final String? cell; // первая ячейка с остатком (для карточки)
 
   const Product({
     required this.id,
@@ -39,7 +38,6 @@ class Product {
     this.syncState = 'synced',
     this.price = 0,
     this.available = 0,
-    this.cell,
   });
 
   Map<String, Object?> toRow() => {
@@ -76,7 +74,6 @@ class Product {
         syncState: (r['sync_state'] as String?) ?? 'synced',
         price: (r['price'] as num?)?.toDouble() ?? 0,
         available: (r['available'] as num?)?.toDouble() ?? 0,
-        cell: r.containsKey('cell') ? r['cell'] as String? : null,
       );
 }
 

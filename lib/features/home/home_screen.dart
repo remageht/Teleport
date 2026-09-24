@@ -10,7 +10,6 @@ import '../shared/app_background.dart';
 import '../shared/product_image.dart';
 import '../warehouse/catalogs_screen.dart';
 import '../warehouse/product_detail_screen.dart';
-import '../receipts/receipts_screen.dart';
 import '../warehouse/warehouse_screen.dart';
 
 /// Главный экран-витрина в стиле сайта: шапка магазина, поиск,
@@ -154,31 +153,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => widget.onOpenTab(2),
-                          icon:
-                              const Icon(Icons.grid_view_rounded),
-                          label: const Text('Каталог'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    const ReceiptsScreen()),
-                          ),
-                          icon: const Icon(
-                              Icons.receipt_long_outlined),
-                          label: const Text('Накладная'),
-                        ),
-                      ),
-                    ],
+                  FilledButton.icon(
+                    onPressed: () => widget.onOpenTab(2),
+                    icon: const Icon(Icons.grid_view_rounded),
+                    label: const Text('Открыть каталог'),
                   ),
                 ],
               ),

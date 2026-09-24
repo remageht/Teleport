@@ -870,22 +870,16 @@ class _ProductCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                      p.cell != null && p.cell!.isNotEmpty
-                          ? p.cell!
-                          : 'АРТ. ${p.sku}',
+                  Text('АРТ. ${p.sku}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                           fontSize: 10,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                           letterSpacing: 0.6,
-                          color: p.cell != null &&
-                                  p.cell!.isNotEmpty
-                              ? AppTheme.brand
-                              : (isDark
-                                  ? Colors.white54
-                                  : AppTheme.mutedLight))),
+                          color: isDark
+                              ? Colors.white54
+                              : AppTheme.mutedLight)),
                   const SizedBox(height: 2),
                   Text(p.name,
                       maxLines: 2,
@@ -894,16 +888,6 @@ class _ProductCard extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                           height: 1.15)),
-                  if (p.description != null &&
-                      p.description!.isNotEmpty)
-                    Text(p.description!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isDark
-                                ? Colors.white54
-                                : AppTheme.mutedLight)),
                   const Spacer(),
                   const SizedBox(height: 6),
                   Row(

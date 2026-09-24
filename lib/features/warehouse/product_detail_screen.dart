@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../../core/app_theme.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
 import '../shared/app_background.dart';
@@ -58,9 +57,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         text: _cells.isNotEmpty ? (_cells.first.cell ?? '') : '');
     final price = TextEditingController(
         text: _p.price > 0 ? _p.price.toStringAsFixed(2) : '');
-    final currentQty = _cells.fold<double>(0, (s, e) => s + e.qty);
-    final qty = TextEditingController(
-        text: currentQty.toStringAsFixed(currentQty % 1 == 0 ? 0 : 2));
     var catId = _p.categoryId;
 
     final ok = await showDialog<bool>(
@@ -91,12 +87,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     controller: price,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Цена, ₽')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: qty,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(labelText: 'Остаток, шт')),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String?>(
                   initialValue: catId,
@@ -132,26 +122,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       price: double.tryParse(price.text.replaceAll(',', '.')),
       categoryId: catId,
     );
-    final newQty = double.tryParse(qty.text.replaceAll(',', '.'));
-    if (newQty != null && newQty != currentQty) {
-      await db.setStockQty(_p.id, newQty,
-          cell: cell.text.trim().isNotEmpty
-              ? cell.text.trim()
-              : (_cells.isNotEmpty ? _cells.first.cell : null));
-      await db.logMove(
-          productId: _p.id,
-          type: 'count',
-          qty: newQty,
-          note:
-              'Правка карточки: было ${currentQty.toStringAsFixed(0)}, стало ${newQty.toStringAsFixed(0)}');
-      await db.database.insert('outbox', {
-        'entity': 'stock_count',
-        'op': 'insert',
-        'payload':
-            '{"product_id":"${_p.id}","qty":$newQty,"sku":"${_p.sku}"}',
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    }
     await _load();
     if (mounted) {
       ScaffoldMessenger.of(context)
@@ -268,66 +238,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Принято: ${q.toStringAsFixed(0)} шт')));
-    }
-  }
-
-  /// Возврат товара покупателем: плюс к остатку, минус популярность.
-  Future<void> _returnProduct() async {
-    final db = context.read<AppDb>();
-    final qty = TextEditingController();
-    final reason = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Возврат товара'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: qty,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Вернули, шт *')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: reason,
-                  decoration: const InputDecoration(
-                      labelText: 'Причина (брак, не подошёл…)')),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Вернуть')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final q = double.tryParse(qty.text.replaceAll(',', '.')) ?? 0;
-    if (q <= 0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Укажите количество')));
-      }
-      return;
-    }
-    await db.registerReturn(
-      _p.id,
-      q,
-      price: _p.price,
-      note: reason.text.trim().isEmpty ? null : reason.text.trim(),
-    );
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Возврат принят: ${q.toStringAsFixed(0)} шт')));
     }
   }
 
@@ -475,8 +385,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             children: [
               _infoCard(context, 'Остаток',
                   '${p.available.toStringAsFixed(0)} шт',
-                  color: p.available > 0 ? scheme.primary : scheme.error,
-                  onTap: _count),
+                  color: p.available > 0 ? scheme.primary : scheme.error),
               const SizedBox(width: 8),
               _infoCard(context, 'Цена',
                   p.price > 0 ? '${p.price.toStringAsFixed(0)} ₽' : 'по запросу'),
@@ -536,16 +445,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-                onPressed: _returnProduct,
-                icon: const Icon(Icons.keyboard_return_outlined),
-                label: const Text('Оформить возврат'),
-                style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.brand)),
-          ),
           const SizedBox(height: 16),
           Text('Штрих-код',
               style: Theme.of(context).textTheme.titleMedium),
@@ -575,40 +474,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
-  Widget _infoCard(BuildContext c, String label, String value,
-      {Color? color, VoidCallback? onTap}) {
+  Widget _infoCard(BuildContext c, String label, String value, {Color? color}) {
     return Expanded(
       child: Card(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              children: [
-                Text(value,
-                    style: Theme.of(c)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold, color: color)),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(label, style: Theme.of(c).textTheme.bodySmall),
-                    if (onTap != null) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.edit,
-                          size: 11,
-                          color: Theme.of(c)
-                              .colorScheme
-                              .onSurfaceVariant
-                              .withValues(alpha: 0.6)),
-                    ],
-                  ],
-                ),
-              ],
-            ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            children: [
+              Text(value,
+                  style: Theme.of(c)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold, color: color)),
+              Text(label, style: Theme.of(c).textTheme.bodySmall),
+            ],
           ),
         ),
       ),
@@ -640,30 +519,9 @@ class _MovesList extends StatelessWidget {
                   dense: true,
                   title: Text('Движений пока нет — примите товар')));
         }
-        // Сводка закупочных цен по приёмкам.
-        final buys = moves
-            .where((m) =>
-                m['type'] == 'receipt' &&
-                ((m['price'] as num?)?.toDouble() ?? 0) > 0)
-            .map((m) => (m['price'] as num).toDouble())
-            .toList();
         return Card(
           child: Column(
             children: [
-              if (buys.isNotEmpty)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.payments_outlined,
-                      color: Colors.green),
-                  title: Text(
-                    'Закупка: посл. ${buys.first.toStringAsFixed(0)} ₽'
-                    ' · мин ${buys.reduce((a, b) => a < b ? a : b).toStringAsFixed(0)}'
-                    ' · макс ${buys.reduce((a, b) => a > b ? a : b).toStringAsFixed(0)}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text('поставок: ${buys.length}'),
-                ),
               for (final m in moves)
                 ListTile(
                   dense: true,
@@ -671,20 +529,19 @@ class _MovesList extends StatelessWidget {
                     switch (m['type']) {
                       'receipt' => Icons.add_box_outlined,
                       'sale' => Icons.point_of_sale_outlined,
-                      'return' => Icons.keyboard_return_outlined,
                       _ => Icons.fact_check_outlined,
                     },
                     color: switch (m['type']) {
                       'receipt' => Colors.green,
                       'sale' => Colors.orange,
-                      'return' => Colors.purple,
                       _ => Colors.blue,
                     },
                   ),
                   title: Text(
                       '${_typeName(m['type'] as String?)} · ${(m['qty'] as num?)?.toStringAsFixed(0)} шт'),
                   subtitle: Text([
-                    if (((m['price'] as num?)?.toDouble() ?? 0) > 0)
+                    if ((m['price'] as num?) != null &&
+                        ((m['price'] as num?)?.toDouble() ?? 0) > 0)
                       '${(m['price'] as num?)?.toDouble().toStringAsFixed(0)} ₽',
                     if ((m['note'] as String?)?.isNotEmpty == true)
                       m['note'] as String,
@@ -701,7 +558,6 @@ class _MovesList extends StatelessWidget {
   String _typeName(String? t) => switch (t) {
         'receipt' => 'Приёмка',
         'sale' => 'Продажа',
-        'return' => 'Возврат',
         _ => 'Инвентаризация',
       };
 

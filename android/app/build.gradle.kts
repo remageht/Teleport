@@ -52,10 +52,6 @@ android {
         release {
             // Своя подпись 1.0.0 (android/teleport.keystore).
             signingConfig = signingConfigs.getByName("release")
-            // Правила для R8 (MLKit и др.).
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro")
         }
     }
 }

@@ -59,19 +59,11 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                     final p = items[i];
                     return ListTile(
                       dense: true,
-                      isThreeLine: true,
                       leading: ProductImage(product: p, size: 44, radius: 10),
                       title: Text(p.name,
                           maxLines: 2, overflow: TextOverflow.ellipsis),
                       subtitle: Text(
-                          [
-                            if (p.description != null &&
-                                p.description!.isNotEmpty)
-                              p.description!,
-                            '${p.sku} · остаток ${p.available.toStringAsFixed(0)} шт',
-                          ].join('\n'),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis),
+                          '${p.sku} · остаток ${p.available.toStringAsFixed(0)} шт'),
                       trailing: Text(p.price > 0
                           ? '${p.price.toStringAsFixed(0)} ₽'
                           : '—'),

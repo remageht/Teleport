@@ -1,7 +1,5 @@
 # Сборка дистрибутива ТелеПорт: dist/ с exe-папкой и apk
-# Версия дистрибутива — в одном месте.
 param([string]$Root = 'C:\dev\radiotrade')
-$Ver = '1.2.6'
 
 Stop-Process -Name TelePort -Force -ErrorAction SilentlyContinue
 
@@ -14,45 +12,33 @@ for ($i = 0; $i -lt 3 -and (Test-Path $dist); $i++) {
 New-Item -ItemType Directory -Path $dist | Out-Null
 
 # 1. Windows: копия Release с переименованным exe
-$win = Join-Path $dist "TelePort_${Ver}_Windows_x64"
+$win = Join-Path $dist 'TelePort_1.0.0_Windows_x64'
 Copy-Item (Join-Path $Root 'build\windows\x64\runner\Release') $win -Recurse
 Rename-Item (Join-Path $win 'radiotrade.exe') 'TelePort.exe'
 # Данные БД живут в %APPDATA%, так что переименование безопасно.
 
 # 2. Архив для распространения
-Compress-Archive -Path $win -DestinationPath (Join-Path $dist "TelePort_${Ver}_Windows_x64.zip")
+Compress-Archive -Path $win -DestinationPath (Join-Path $dist 'TelePort_1.0.0_Windows_x64.zip')
 
-# 3. Android APK по архитектурам (сплиты: arm64 — современные телефоны,
-# armeabi-v7a — старые 32-бит, x86_64 — эмуляторы). Сплит весит ~втрое
-# меньше жирного APK, т.к. содержит нативный код только одной архитектуры.
-$apkDir = Join-Path $Root 'build\app\outputs\flutter-apk'
-foreach ($abi in @('arm64-v8a', 'armeabi-v7a', 'x86_64')) {
-  $src = Join-Path $apkDir "app-$abi-release.apk"
-  if (Test-Path $src) {
-    Copy-Item $src (Join-Path $dist "TelePort_${Ver}_Android_$abi.apk")
-  }
-}
-# Жирный APK не кладём: сплиты выше покрывают все архитектуры,
-# а лежалый fat только вводит в заблуждение версией.
+# 3. Android APK
+Copy-Item (Join-Path $Root 'build\app\outputs\flutter-apk\app-release.apk') `
+    (Join-Path $dist 'TelePort_1.0.0_Android.apk')
 
 # 4. Инструкция
 @"
 ================================================================
-  ТелеПорт $Ver — мобильная торговля ТЕЛЕМАСТЕР
+  ТелеПорт 1.0.0 — мобильная торговля ТЕЛЕМАСТЕР
   (склад, каталоги, продажи, дашборд дня, популярность, синхронизация, Excel-экспорт)
 ================================================================
 
 WINDOWS (.exe)
-  1) Распакуйте папку TelePort_${Ver}_Windows_x64 целиком.
+  1) Распакуйте папку TelePort_1.0.0_Windows_x64 целиком.
   2) Запустите TelePort.exe.
   Требования: Windows 10/11 x64. Интернет нужен только для
   синхронизации; база хранится локально на компьютере.
 
-ANDROID (.apk) — берите файл под свой процессор:
-  TelePort_${Ver}_Android_arm64-v8a.apk — почти все современные телефоны;
-  TelePort_${Ver}_Android_armeabi-v7a.apk — старые 32-битные;
-  TelePort_${Ver}_Android_x86_64.apk — эмуляторы.
-  1) Скопируйте нужный apk на телефон/планшет.
+ANDROID (.apk)
+  1) Скопируйте TelePort_1.0.0_Android.apk на телефон/планшет.
   2) Откройте файл -> разрешите «Установка из неизвестных
      источников» -> Установить.
 
