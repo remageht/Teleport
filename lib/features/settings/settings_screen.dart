@@ -8,12 +8,14 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/session.dart';
 import '../../../core/theme_provider.dart';
 import '../../../core/app_theme.dart';
 import '../../../data/db/app_db.dart';
 import '../../../services/lan_sync.dart';
+import '../../../services/telegram_backup.dart';
 import '../shared/app_background.dart';
 import '../prices/price_lists_screen.dart';
 import '../receipts/receipts_screen.dart';
@@ -28,19 +30,96 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _host;
+  late final TextEditingController _tgBot;
+  late final TextEditingController _tgChat;
   final lan = LanSync();
   String? _myAddress;
   String _syncResult = '';
   String _appVersion = '';
+  bool _tgAuto = false;
+  int _tgLast = 0;
+  bool _tgBusy = false;
   ({int products, int pieces, int orders, double dbMb})? _stats;
+
+  static const _tgBotKey = 'tg_bot';
+  static const _tgChatKey = 'tg_chat';
+  static const _tgAutoKey = 'tg_auto';
+  static const _tgLastKey = 'tg_last';
 
   @override
   void initState() {
     super.initState();
     _host = TextEditingController();
+    _tgBot = TextEditingController();
+    _tgChat = TextEditingController();
     _detectAddress();
     _loadVersion();
     _loadStats();
+    _loadTg();
+  }
+
+  Future<void> _loadTg() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _tgBot.text = p.getString(_tgBotKey) ?? '';
+      _tgChat.text = p.getString(_tgChatKey) ?? '';
+      _tgAuto = p.getBool(_tgAutoKey) ?? false;
+      _tgLast = p.getInt(_tgLastKey) ?? 0;
+    });
+  }
+
+  Future<void> _saveTg() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_tgBotKey, _tgBot.text.trim());
+    await p.setString(_tgChatKey, _tgChat.text.trim());
+  }
+
+  String _tgDate() {
+    final d =
+        DateTime.fromMillisecondsSinceEpoch(_tgLast);
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _sendTgNow() async {
+    final dbPath = context.read<AppDb>().dbPath;
+    await _saveTg();
+    final token = _tgBot.text.trim();
+    final chat = _tgChat.text.trim();
+    if (token.isEmpty || chat.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Введи токен бота и chat_id')));
+      }
+      return;
+    }
+    setState(() => _tgBusy = true);
+    try {
+      await TelegramBackup.sendDb(
+        botToken: token,
+        chatId: chat,
+        dbPath: dbPath,
+      );
+      final p = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await p.setInt(_tgLastKey, now);
+      if (mounted) {
+        setState(() {
+          _tgBusy = false;
+          _tgLast = now;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Копия улетела в Telegram')));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _tgBusy = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
   }
 
   Future<void> _loadVersion() async {
@@ -184,6 +263,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     // Не гасим сервер при уходе с экрана — им пользуются с другого устройства.
     _host.dispose();
+    _tgBot.dispose();
+    _tgChat.dispose();
     super.dispose();
   }
 
@@ -340,6 +421,87 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: _restore,
               icon: const Icon(Icons.restore_outlined),
               label: const Text('Восстановить из копии'),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.telegram_outlined),
+                        const SizedBox(width: 8),
+                        Text('Копия в Telegram',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                    fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Бот из BotFather, добавить в группу админом. '
+                      'chat_id — через @getmyid_bot.',
+                      style:
+                          Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _tgBot,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                          labelText: 'Токен бота',
+                          prefixIcon: Icon(Icons.key_outlined)),
+                      onChanged: (_) => _saveTg(),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _tgChat,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                          labelText: 'chat_id группы',
+                          prefixIcon:
+                              Icon(Icons.group_outlined)),
+                      onChanged: (_) => _saveTg(),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Автокопия раз в сутки'),
+                      subtitle: Text(_tgLast == 0
+                          ? 'ещё не отправлялось'
+                          : 'последняя: ${_tgDate()}'),
+                      value: _tgAuto,
+                      onChanged: (v) async {
+                        final p =
+                            await SharedPreferences.getInstance();
+                        await p.setBool(_tgAutoKey, v);
+                        setState(() => _tgAuto = v);
+                      },
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed:
+                            _tgBusy ? null : _sendTgNow,
+                        icon: _tgBusy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(
+                                        strokeWidth: 2))
+                            : const Icon(Icons.send_outlined),
+                        label: Text(_tgBusy
+                            ? 'Отправляю…'
+                            : 'Отправить копию сейчас'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(

@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:quick_actions/quick_actions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'core/app_theme.dart';
@@ -11,6 +13,10 @@ import 'data/db/app_db.dart';
 import 'data/sync/sync_engine.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_shell.dart';
+import 'services/telegram_backup.dart';
+
+/// Ожидающее действие из ярлыка (обрабатывает HomeShell при старте).
+String? pendingShortcut;
 
 /// Точка входа. Инициализирует БД, синхронизатор и запускает приложение.
 Future<void> main() async {
@@ -40,6 +46,26 @@ Future<void> main() async {
     warehouseId: 'wh-shop',
   );
 
+  // Ярлыки с рабочего стола (Новая продажа / Склад). Безопасно: try/catch.
+  try {
+    const qa = QuickActions();
+    qa.setShortcutItems(const [
+      ShortcutItem(
+          type: 'action_sale',
+          localizedTitle: 'Новая продажа',
+          icon: 'ic_launcher'),
+      ShortcutItem(
+          type: 'action_stock',
+          localizedTitle: 'Склад',
+          icon: 'ic_launcher'),
+    ]);
+    qa.initialize((type) => pendingShortcut = type);
+  } catch (_) {}
+
+  // Автокопия базы в Telegram раз в сутки (если включена в настройках).
+  // ignore: unawaited_futures
+  _autoTgBackup(db);
+
   runApp(MultiProvider(
     providers: [
       Provider<AppDb>.value(value: db),
@@ -50,6 +76,26 @@ Future<void> main() async {
     ],
     child: const RadioTradeApp(),
   ));
+}
+
+/// Фоновая автокопия базы в Telegram (раз в сутки, если включена).
+Future<void> _autoTgBackup(AppDb db) async {
+  try {
+    final p = await SharedPreferences.getInstance();
+    if (!(p.getBool('tg_auto') ?? false)) return;
+    final last = p.getInt('tg_last') ?? 0;
+    if (DateTime.now().millisecondsSinceEpoch - last <
+        24 * 3600 * 1000) {
+      return;
+    }
+    final token = p.getString('tg_bot') ?? '';
+    final chat = p.getString('tg_chat') ?? '';
+    if (token.isEmpty || chat.isEmpty) return;
+    await TelegramBackup.sendDb(
+        botToken: token, chatId: chat, dbPath: db.dbPath);
+    await p.setInt(
+        'tg_last', DateTime.now().millisecondsSinceEpoch);
+  } catch (_) {}
 }
 
 class RadioTradeApp extends StatelessWidget {

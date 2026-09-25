@@ -631,6 +631,100 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 }
 
+/// Мини-график цен продажи в карточке товара (последние продажи).
+class _SalePriceChart extends StatelessWidget {
+  final List<Map<String, Object?>> moves;
+  const _SalePriceChart({required this.moves});
+
+  @override
+  Widget build(BuildContext context) {
+    final sales = moves
+        .where((m) =>
+            m['type'] == 'sale' &&
+            ((m['price'] as num?)?.toDouble() ?? 0) > 0)
+        .toList()
+        .reversed
+        .toList();
+    if (sales.length < 2) return const SizedBox.shrink();
+    final pts = sales
+        .take(12)
+        .map((m) => (
+              price: (m['price'] as num).toDouble(),
+              label: _shortDate(m['created_at'] as String?),
+            ))
+        .toList();
+    final max =
+        pts.map((e) => e.price).reduce((a, b) => a > b ? a : b);
+    if (max <= 0) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Цены продажи',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 90,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (final p in pts)
+                  Expanded(
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 2),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(p.price.toStringAsFixed(0),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(fontSize: 9)),
+                          const SizedBox(height: 2),
+                          Container(
+                            height:
+                                8 + 52 * (p.price / max),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.teal,
+                                  Colors.teal.withValues(
+                                      alpha: 0.45),
+                                ],
+                              ),
+                              borderRadius:
+                                  BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(p.label,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(fontSize: 9)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _shortDate(String? iso) {
+    final d = DateTime.tryParse(iso ?? '');
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}';
+  }
+}
+
 /// История движений товара: приёмки, продажи, инвентаризации.
 class _MovesList extends StatelessWidget {
   final String productId;
@@ -679,6 +773,7 @@ class _MovesList extends StatelessWidget {
                   ),
                   subtitle: Text('поставок: ${buys.length}'),
                 ),
+              _SalePriceChart(moves: moves),
               for (final m in moves)
                 ListTile(
                   dense: true,

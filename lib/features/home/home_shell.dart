@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/session.dart';
 import '../../data/sync/sync_engine.dart';
+import '../../main.dart' show pendingShortcut;
 import '../clients/clients_screen.dart';
 import '../home/dashboard_screen.dart';
 import '../home/home_screen.dart';
@@ -27,6 +28,21 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     context.read<SyncEngine>().start();
+    // Запуск через ярлык с рабочего стола (Новая продажа / Склад).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final a = pendingShortcut;
+      pendingShortcut = null;
+      if (!mounted || a == null) return;
+      if (a == 'action_sale') {
+        Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) =>
+                    const OrderEditScreen(client: null)));
+      } else if (a == 'action_stock') {
+        setState(() => _tab = 2);
+      }
+    });
   }
 
   @override
