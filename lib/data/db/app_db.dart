@@ -22,7 +22,7 @@ class AppDb {
   static final AppDb instance = AppDb._();
 
   /// Текущая версия схемы. Поднимать вместе с version в openDatabase.
-  static const kDbVersion = 7;
+  static const kDbVersion = 8;
 
   Database? _db;
   Database get database => _db!;
@@ -116,6 +116,20 @@ class AppDb {
           await db.execute(
               'ALTER TABLE moves ADD COLUMN receipt_id TEXT DEFAULT NULL');
         }
+        if (oldV < 8) {
+          // Порог остатка + касса дня.
+          await db.execute(
+              'ALTER TABLE products ADD COLUMN min_qty REAL DEFAULT 0');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS cash_moves (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              day TEXT NOT NULL, kind TEXT NOT NULL,
+              method TEXT NOT NULL, amount REAL DEFAULT 0,
+              note TEXT, created_at TEXT
+            )''');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_cash_day ON cash_moves(day)');
+        }
       },
     );
     // После открытия: проверка целостности + запоминание версии схемы.
@@ -170,6 +184,7 @@ class AppDb {
         nominal TEXT, case_type TEXT, manufacturer TEXT, category_id TEXT,
         barcode TEXT, unit TEXT DEFAULT 'шт',
         sold_count INTEGER DEFAULT 0,
+        min_qty REAL DEFAULT 0,
         photo_path TEXT,
         updated_at TEXT DEFAULT '',
         is_active INTEGER DEFAULT 1,
@@ -319,6 +334,7 @@ class AppDb {
       {SortMode sort = SortMode.popular,
       bool onlyAvailable = false,
       bool onlySold = false,
+      bool onlyLow = false,
       String? categoryId,
       int limit = 200}) async {
     var sql = '''
@@ -348,6 +364,9 @@ class AppDb {
     }
     if (onlySold) {
       sql += ' AND p.sold_count > 0';
+    }
+    if (onlyLow) {
+      sql += ' AND p.min_qty > 0 AND IFNULL(s.available, 0) <= p.min_qty';
     }
     if (categoryId != null) {
       // 'none' = товары без каталога.
@@ -1249,7 +1268,127 @@ class AppDb {
         where: 'product_id = ? AND price_list_id = ?',
         whereArgs: [productId, priceListId ?? 'pl-base'],
         limit: 1);
+    if (rows.isEmpty) return 0;
     return (rows.first['price'] as num?)?.toDouble() ?? 0;
+  }
+
+  // ---- Пороги остатков ----
+
+  Future<void> setMinQty(String productId, double qty) async {
+    await database.update('products', {'min_qty': qty},
+        where: 'id = ?', whereArgs: [productId]);
+    await touch(productId);
+  }
+
+  /// Товары, у которых задан порог и остаток <= порога.
+  Future<List<Product>> lowStock({int limit = 50}) async {
+    final rows = await database.rawQuery('''
+      SELECT p.*, IFNULL(pi.price,0) AS price,
+             IFNULL(s.available,0) AS available,
+             IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
+      FROM products p
+      LEFT JOIN price_items pi ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
+      LEFT JOIN (SELECT product_id, SUM(qty-reserved) AS available FROM stocks GROUP BY product_id) s
+        ON s.product_id = p.id
+      WHERE p.is_active = 1 AND p.min_qty > 0
+        AND IFNULL(s.available, 0) <= p.min_qty
+      ORDER BY (IFNULL(s.available,0) / p.min_qty), p.name LIMIT ?
+    ''', [limit]);
+    return rows.map(Product.fromRow).toList();
+  }
+
+  // ---- Касса дня ----
+
+  /// Сводка дня: продажи по способам оплаты + ручные движения + открытие.
+  Future<({double opening, Map<String, double> sales, double cashIn, double cashOut})>
+      cashDay(String day) async {
+    final salesRows = await database.rawQuery('''
+      SELECT pay_type AS m, SUM(total) AS t FROM orders
+      WHERE substr(created_at, 1, 10) = ? GROUP BY pay_type
+    ''', [day]);
+    final sales = <String, double>{
+      for (final r in salesRows)
+        (r['m'] as String? ?? 'cash'):
+            (r['t'] as num?)?.toDouble() ?? 0,
+    };
+    final manRows = await database.rawQuery('''
+      SELECT kind AS k, SUM(amount) AS a FROM cash_moves
+      WHERE day = ? AND kind IN ('in', 'out', 'open') GROUP BY kind
+    ''', [day]);
+    var cashIn = 0.0, cashOut = 0.0, opening = 0.0;
+    for (final r in manRows) {
+      final a = (r['a'] as num?)?.toDouble() ?? 0;
+      switch (r['k']) {
+        case 'in':
+          cashIn = a;
+        case 'out':
+          cashOut = a;
+        case 'open':
+          opening = a;
+      }
+    }
+    return (
+      opening: opening,
+      sales: sales,
+      cashIn: cashIn,
+      cashOut: cashOut
+    );
+  }
+
+  Future<void> addCashMove({
+    required String day,
+    required String kind, // open | in | out | close
+    String method = 'cash',
+    required double amount,
+    String? note,
+  }) async {
+    await database.insert('cash_moves', {
+      'day': day,
+      'kind': kind,
+      'method': method,
+      'amount': amount,
+      'note': note,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Ручные движения кассы за день (внесения/выплаты/закрытия).
+  Future<List<Map<String, Object?>>> cashMoves(String day) async {
+    return database.query('cash_moves',
+        where: 'day = ?', whereArgs: [day], orderBy: 'id');
+  }
+
+  // ---- Маржа ----
+
+  /// Прибыль по проданным позициям: выручка минус последняя закупка.
+  Future<List<({String sku, String name, double qty, double revenue, double buyPrice, double profit})>>
+      marginReport({int limit = 200}) async {
+    final rows = await database.rawQuery('''
+      SELECT p.sku AS sku, p.name AS name,
+             SUM(l.qty) AS qty, SUM(l.qty * l.price) AS revenue,
+             (SELECT m.price FROM moves m WHERE m.product_id = p.id
+                AND m.type = 'receipt' AND m.price > 0
+              ORDER BY m.id DESC LIMIT 1) AS buy
+      FROM order_lines l
+      JOIN products p ON p.id = l.product_id
+      GROUP BY p.id ORDER BY revenue DESC LIMIT ?
+    ''', [limit]);
+    final out = <({String sku, String name, double qty, double revenue, double buyPrice, double profit})>[];
+    for (final r in rows) {
+      final qty = (r['qty'] as num?)?.toDouble() ?? 0;
+      final revenue = (r['revenue'] as num?)?.toDouble() ?? 0;
+      final buy = (r['buy'] as num?)?.toDouble() ?? 0;
+      out.add((
+        sku: (r['sku'] as String?) ?? '',
+        name: (r['name'] as String?) ?? '',
+        qty: qty,
+        revenue: revenue,
+        buyPrice: buy,
+        profit: revenue - qty * buy,
+      ));
+    }
+    out.sort((a, b) => b.profit.compareTo(a.profit));
+    return out;
   }
 
   // ---- Клиенты ----

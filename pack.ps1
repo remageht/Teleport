@@ -1,7 +1,7 @@
 # Сборка дистрибутива ТелеПорт: dist/ с exe-папкой и apk
 # Версия дистрибутива — в одном месте.
 param([string]$Root = 'C:\dev\radiotrade')
-$Ver = '1.2.7'
+$Ver = '1.3.0'
 
 Stop-Process -Name TelePort -Force -ErrorAction SilentlyContinue
 

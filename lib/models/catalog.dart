@@ -13,6 +13,7 @@ class Product {
   final String? barcode;
   final String unit; // шт, лента, упак
   final int soldCount; // сколько раз покупали (популярность)
+  final double minQty; // порог остатка: ниже — «заканчивается»
   final String? photoPath; // реальное фото товара (снятое камерой)
   final bool isActive;
   final String syncState; // pending | synced | conflict
@@ -34,6 +35,7 @@ class Product {
     this.barcode,
     this.unit = 'шт',
     this.soldCount = 0,
+    this.minQty = 0,
     this.photoPath,
     this.isActive = true,
     this.syncState = 'synced',
@@ -54,6 +56,7 @@ class Product {
         'barcode': barcode,
         'unit': unit,
         'sold_count': soldCount,
+        'min_qty': minQty,
         'photo_path': photoPath,
         'is_active': isActive ? 1 : 0,
         'sync_state': syncState,
@@ -71,6 +74,7 @@ class Product {
         barcode: r['barcode'] as String?,
         unit: (r['unit'] as String?) ?? 'шт',
         soldCount: (r['sold_count'] as int?) ?? 0,
+        minQty: (r['min_qty'] as num?)?.toDouble() ?? 0,
         photoPath: r['photo_path'] as String?,
         isActive: (r['is_active'] as int? ?? 1) == 1,
         syncState: (r['sync_state'] as String?) ?? 'synced',

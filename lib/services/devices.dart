@@ -70,6 +70,29 @@ class ReceiptPrinter {
         : 'Напечатано: ${labels.length}';
   }
 
+  /// Печать произвольного текста (Z-отчёт кассы): транслит + отрезка.
+  /// На десктопе — текстовый файл. Возвращает сообщение для UI.
+  Future<String> printText(String title, String text) async {
+    if (kIsWeb ||
+        Platform.isWindows ||
+        Platform.isLinux ||
+        Platform.isMacOS) {
+      final safe =
+          title.replaceAll(RegExp(r'[^\w\-]+'), '_');
+      final f = File(
+          '${safe}_${DateTime.now().millisecondsSinceEpoch}.txt');
+      await f.writeAsString(text);
+      return 'Файл: ${f.path}';
+    }
+    final out = BytesBuilder();
+    out.add([0x1B, 0x40]); // ESC @
+    out.add([0x1B, 0x61, 0x01]); // центр
+    out.add(utf8.encode('${_sanitize(translit(text))}\n'));
+    out.add([0x1D, 0x56, 0x42, 0x00]); // отрезка
+    await PrintBluetoothThermal.writeBytes(out.toBytes());
+    return 'Напечатано';
+  }
+
   /// ESC/POS-байты ценника 58мм: название, цена крупно, CODE128.
   Uint8List _buildLabel(
       {required String name,

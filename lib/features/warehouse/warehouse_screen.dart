@@ -12,6 +12,7 @@ import '../shared/barcode_scan_sheet.dart';
 import '../shared/app_background.dart';
 import '../shared/printer_sheet.dart';
 import '../shared/product_image.dart';
+import '../shared/voice_sheet.dart';
 import 'catalogs_screen.dart';
 import 'product_detail_screen.dart';
 
@@ -35,6 +36,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   SortMode _sort = SortMode.popular;
   bool _onlyAvailable = false;
   bool _onlySold = false;
+  bool _onlyLow = false;
   String? _catId; // null = «Все»
   final _selected = <String>{}; // мультивыбор: долгое нажатие по карточке
 
@@ -69,6 +71,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           sort: _sort,
           onlyAvailable: _onlyAvailable,
           onlySold: _onlySold,
+          onlyLow: _onlyLow,
           categoryId: _catId,
         );
     if (mounted) {
@@ -95,6 +98,15 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   void _openProduct(Product p) => Navigator.push(context,
       MaterialPageRoute(builder: (_) => ProductDetailScreen(product: p)));
+
+  /// Голосовой поиск: надиктовать название, текст подставится в поиск.
+  /// Работает на телефоне (системное распознавание), на ПК недоступно.
+  Future<void> _voiceSearch() async {
+    final text = await showVoiceSheet(context);
+    if (!mounted || text == null || text.trim().isEmpty) return;
+    _search.text = text.trim();
+    await _load();
+  }
 
   /// Диалог добавления нового товара в базу.
   Future<void> _addProductDialog() async {
@@ -567,6 +579,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                 ),
                 const SizedBox(width: 4),
                 IconButton.filledTonal(
+                  onPressed: _voiceSearch,
+                  icon: const Icon(Icons.mic_outlined),
+                  tooltip: 'Голосовой поиск',
+                ),
+                const SizedBox(width: 4),
+                IconButton.filledTonal(
                   onPressed: _addProductDialog,
                   icon: const Icon(Icons.add),
                   tooltip: 'Новый товар',
@@ -686,6 +704,17 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   selected: _onlyAvailable,
                   onSelected: (v) {
                     _onlyAvailable = v;
+                    _load();
+                  },
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: const Icon(Icons.warning_amber_rounded,
+                      size: 14, color: Colors.red),
+                  label: const Text('Мало'),
+                  selected: _onlyLow,
+                  onSelected: (v) {
+                    _onlyLow = v;
                     _load();
                   },
                 ),

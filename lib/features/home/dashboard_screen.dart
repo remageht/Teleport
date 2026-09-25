@@ -21,6 +21,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _sales = 0;
   List<Order> _orders = [];
   List<Product> _popular = [];
+  List<Product> _low = [];
   List<({String day, double total, int count})> _week = [];
   List<({String name, int qty})> _byCat = [];
   int _positions = 0, _stockValue = 0;
@@ -39,6 +40,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final orders = await db.ordersOfDay(now, session.userId ?? '');
     final sales = await db.daySales(now, session.userId ?? '');
     final popular = await db.popularProducts(limit: 5);
+    final low = await db.lowStock(limit: 8);
     final week = await db.salesByDay(days: 7);
     final byCat = await db.salesByCategory();
     final st = await db.database.rawQuery('''
@@ -50,6 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _orders = orders;
       _sales = sales;
       _popular = popular;
+      _low = low;
       _week = week;
       _byCat = byCat;
       _positions = orders.fold(0, (s, o) => s + o.lines.length);
@@ -242,6 +245,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ? 0
                             : p.soldCount / _popular.first.soldCount,
                         color: Colors.orange,
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    ProductDetailScreen(product: p))),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Заканчивается: остаток <= заданного минимума.
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _sectionHead(Icons.warning_amber_rounded,
+                        Colors.red, 'Заканчивается'),
+                    const SizedBox(height: 8),
+                    if (_low.isEmpty)
+                      const Text(
+                          'Всё в норме. Минимум задаётся в карточке товара (поле «Минимум, шт»)'),
+                    for (final p in _low)
+                      AnimBar(
+                        label: p.name,
+                        value:
+                            'остаток ${p.available.toStringAsFixed(0)} из мин ${p.minQty.toStringAsFixed(0)}${p.cell?.isNotEmpty == true ? ' · ${p.cell}' : ''}',
+                        fraction: p.minQty <= 0
+                            ? 0
+                            : (p.available / p.minQty)
+                                .clamp(0.0, 1.0),
+                        color: Colors.red,
                         onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(

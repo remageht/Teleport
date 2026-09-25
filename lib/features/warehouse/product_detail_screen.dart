@@ -58,6 +58,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         text: _cells.isNotEmpty ? (_cells.first.cell ?? '') : '');
     final price = TextEditingController(
         text: _p.price > 0 ? _p.price.toStringAsFixed(2) : '');
+    final minQty = TextEditingController(
+        text: _p.minQty > 0
+            ? _p.minQty.toStringAsFixed(
+                _p.minQty % 1 == 0 ? 0 : 2)
+            : '');
     final currentQty = _cells.fold<double>(0, (s, e) => s + e.qty);
     final qty = TextEditingController(
         text: currentQty.toStringAsFixed(currentQty % 1 == 0 ? 0 : 2));
@@ -91,6 +96,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     controller: price,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(labelText: 'Цена, ₽')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: minQty,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: const InputDecoration(
+                        labelText:
+                            'Минимум, шт (пусто — без контроля)')),
                 const SizedBox(height: 8),
                 TextField(
                     controller: qty,
@@ -132,6 +145,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       price: double.tryParse(price.text.replaceAll(',', '.')),
       categoryId: catId,
     );
+    await db.setMinQty(
+        _p.id, double.tryParse(minQty.text.replaceAll(',', '.')) ?? 0);
     final newQty = double.tryParse(qty.text.replaceAll(',', '.'));
     if (newQty != null && newQty != currentQty) {
       await db.setStockQty(_p.id, newQty,

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../../core/session.dart';
 import '../../../data/db/app_db.dart';
 import '../../../services/export_service.dart';
+import '../cash/cash_screen.dart';
+import 'margin_screen.dart';
 
 /// Отчёты: продажи за день, остатки, дебиторка, выполнение плана.
 class ReportsScreen extends StatefulWidget {
@@ -64,6 +66,38 @@ class _ReportsScreenState extends State<ReportsScreen> {
         _reportTile('Позиций продано', '$_positions', Icons.list_alt),
         _reportTile('Дебиторская задолженность', '${_debt.toStringAsFixed(2)} ₽',
             Icons.account_balance_wallet),
+        const SizedBox(height: 4),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.point_of_sale,
+                    color: Colors.green),
+                title: const Text('Касса дня'),
+                subtitle: const Text(
+                    'Утро, продажи по способам, сверка, Z-отчёт'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const CashScreen())),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.trending_up,
+                    color: Colors.teal),
+                title: const Text('Маржа по позициям'),
+                subtitle: const Text(
+                    'Выручка минус последняя закупка'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const MarginScreen())),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 12),
         Text('Экспорт', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
