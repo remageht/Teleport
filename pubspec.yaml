@@ -1,7 +1,7 @@
 name: radiotrade
 description: RadioTrade — мобильная торговля радиокомпонентами (pre-selling / van-selling).
 publish_to: "none"
-version: 1.5.0+25
+version: 1.5.1+26
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -32,6 +32,10 @@ dependencies:
   print_bluetooth_thermal: ^1.0.9
   # Голосовой поиск (только телефон)
   speech_to_text: ^7.5.0
+  # Русский OCR накладных (Tesseract, офлайн)
+  # Форк внутри репозитория (plugins/): оригинал 0.4.31 заброшен.
+  flutter_tesseract_ocr:
+    path: plugins/flutter_tesseract_ocr
   # Фото товаров с камеры
   image_picker: ^1.1.2
   # Экспорт продаж в Excel
@@ -45,9 +49,6 @@ dependencies:
   package_info_plus: ^9.0.1
   file_selector: ^1.1.0
   quick_actions: ^1.1.1
-  flutter_tesseract_ocr:
-    # Форк внутри репозитория: оригинал 0.4.31 заброшен (jcenter/AGP7).
-    path: plugins/flutter_tesseract_ocr
 dev_dependencies:
   flutter_test:
     sdk: flutter

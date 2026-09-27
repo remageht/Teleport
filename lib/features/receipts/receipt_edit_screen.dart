@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
 import '../../../services/invoice_photo_ocr.dart';
+import '../../../services/tess_invoice_ocr.dart';
 import '../shared/app_background.dart';
 
 /// Строка накладной на этапе разбора.
@@ -306,25 +306,18 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
     }
   }
 
-  /// Распознать по-русски (Tesseract, офлайн, дольше): построчно через
-  /// общий парсер — дальше тот же матчинг с базой.
+  /// Распознать по-русски (Tesseract, офлайн, дольше): предобработка фото
+  /// (EXIF-поворот, серый, ресайз 2000px), попытки 0°/90°/270°, общий парсер.
+  /// Если строк 0 — показывает диалог с сырым текстом движка.
   Future<void> _ocrTess() async {
     final path = await _pickInvoicePhoto();
     if (path == null) return;
     setState(() => _busy = true);
-    List<OcrLine> found = [];
+    TessInvoiceResult res;
     try {
-      final text = await FlutterTesseractOcr.extractText(
-        path,
-        language: 'rus+eng',
-        args: {'psm': '6'},
-      );
-      for (final raw in text.split('\n')) {
-        final p = InvoicePhotoOcr.parseLine(raw);
-        if (p != null) found.add(p);
-      }
+      res = await TessInvoiceOcr.recognize(path);
     } catch (e) {
-      found = [];
+      res = (lines: <OcrLine>[], rawText: '');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Не распозналось: $e')));
@@ -335,20 +328,41 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
     setState(() {
       _busy = false;
       _photoPath = saved;
-      for (final f in found) {
-        _lines.add(_ImpLine(
-            rawName: f.name, qty: f.qty, price: f.price));
+      for (final f in res.lines) {
+        _lines.add(_ImpLine(rawName: f.name, qty: f.qty, price: f.price));
       }
       _recognized = false;
     });
-    if (mounted && found.isNotEmpty) {
+    if (!mounted) return;
+    if (res.lines.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-              'Строк по-русски: ${found.length} — проверь и жми «Распознать позиции»')));
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              'Позиций не нашёл — попробуй чётче фото или вбей вручную')));
+              'Строк по-русски: ${res.lines.length} — проверь и жми «Распознать позиции»')));
+    } else {
+      // Ничего не нашли — показываем сырой текст движка для диагностики.
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Движок увидел вот что'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                res.rawText.isEmpty
+                    ? '(пусто — возможно, фото слишком тёмное или боком)'
+                    : res.rawText,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Закрыть'),
+            ),
+          ],
+        ),
+      );
     }
   }
 
