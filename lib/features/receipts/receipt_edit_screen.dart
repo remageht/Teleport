@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -213,49 +214,7 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
   /// Галерея идёт через системный файловый picker: на части прошивок
   /// штатная галерея image_picker падает с PlatformException.
   Future<void> _ocrPhoto() async {
-    final src = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Фото накладной'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Снять камерой'),
-              onTap: () => Navigator.pop(c, 'camera'),
-            ),
-            ListTile(
-              leading:
-                  const Icon(Icons.photo_library_outlined),
-              title: const Text('Выбрать файл'),
-              onTap: () => Navigator.pop(c, 'file'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (src == null) return;
-    String? path;
-    try {
-      if (src == 'camera') {
-        final x = await ImagePicker()
-            .pickImage(source: ImageSource.camera);
-        path = x?.path;
-      } else {
-        const group = XTypeGroup(
-            label: 'Фото', extensions: ['jpg', 'jpeg', 'png']);
-        final f =
-            await openFile(acceptedTypeGroups: [group]);
-        path = f?.path;
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Не вышло взять фото: $e')));
-      }
-      return;
-    }
+    final path = await _pickInvoicePhoto();
     if (path == null) return;
     setState(() => _busy = true);
     List<OcrLine> found = [];
@@ -294,6 +253,98 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               'Строк с фото: ${found.length} — проверь и жми «Распознать позиции»')));
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Позиций не нашёл — попробуй чётче фото или вбей вручную')));
+    }
+  }
+
+  /// Выбор фото накладной: камера или файл. Путь или null.
+  Future<String?> _pickInvoicePhoto() async {
+    final src = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Фото накладной'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Снять камерой'),
+              onTap: () => Navigator.pop(c, 'camera'),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.photo_library_outlined),
+              title: const Text('Выбрать файл'),
+              onTap: () => Navigator.pop(c, 'file'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (src == null) return null;
+    try {
+      if (src == 'camera') {
+        final x = await ImagePicker()
+            .pickImage(source: ImageSource.camera);
+        return x?.path;
+      } else {
+        const group = XTypeGroup(
+            label: 'Фото', extensions: ['jpg', 'jpeg', 'png']);
+        final f =
+            await openFile(acceptedTypeGroups: [group]);
+        return f?.path;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Не вышло взять фото: $e')));
+      }
+      return null;
+    }
+  }
+
+  /// Распознать по-русски (Tesseract, офлайн, дольше): построчно через
+  /// общий парсер — дальше тот же матчинг с базой.
+  Future<void> _ocrTess() async {
+    final path = await _pickInvoicePhoto();
+    if (path == null) return;
+    setState(() => _busy = true);
+    List<OcrLine> found = [];
+    try {
+      final text = await FlutterTesseractOcr.extractText(
+        path,
+        language: 'rus+eng',
+        args: {'psm': '6'},
+      );
+      for (final raw in text.split('\n')) {
+        final p = InvoicePhotoOcr.parseLine(raw);
+        if (p != null) found.add(p);
+      }
+    } catch (e) {
+      found = [];
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Не распозналось: $e')));
+      }
+    }
+    if (!mounted) return;
+    final saved = await _persistPhoto(path);
+    setState(() {
+      _busy = false;
+      _photoPath = saved;
+      for (final f in found) {
+        _lines.add(_ImpLine(
+            rawName: f.name, qty: f.qty, price: f.price));
+      }
+      _recognized = false;
+    });
+    if (mounted && found.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Строк по-русски: ${found.length} — проверь и жми «Распознать позиции»')));
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text(
@@ -396,10 +447,15 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
                       : Icons.check_circle),
                 ),
                 IconButton.filledTonal(
-                  tooltip: 'Распознать позиции с фото',
+                  tooltip: 'Распознать позиции с фото (быстро, латиница)',
                   onPressed: _busy ? null : _ocrPhoto,
                   icon: const Icon(
                       Icons.document_scanner_outlined),
+                ),
+                IconButton.filledTonal(
+                  tooltip: 'Распознать по-русски (дольше, точнее)',
+                  onPressed: _busy ? null : _ocrTess,
+                  icon: const Icon(Icons.translate_outlined),
                 ),
               ],
             ),

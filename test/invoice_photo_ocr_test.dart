@@ -88,5 +88,52 @@ void main() {
       expect(InvoicePhotoOcr.parseLine(
           'Resp Krym, ul Sovetskaya, Dom 9'), isNull);
     });
+    test('rejects anomalous price (article digits merged by OCR)', () {
+      // OCR прочитал «BC4 40/320» (артикул) как «BC кол-во 4 цена 40160.00».
+      // Цена >50 000 → фильтр аномальных цен должен отклонить строку.
+      expect(
+        InvoicePhotoOcr.parseLine('BC 4 40160.00'),
+        isNull,
+        reason: 'аномально большая цена — артефакт склейки цифр артикула',
+      );
+      // Вариант с явно склеенной строкой вида «40/320» → «40160»
+      expect(
+        InvoicePhotoOcr.parseLine('BC4 40/320 4 40160 160640'),
+        isNull,
+        reason: 'артикул с диапазоном не должен парситься как товар',
+      );
+    });
+
+    test('rejects supplier address line with postal code', () {
+      // «BapkriOB A. O., 296500, ...» — строка исполнителя с почтовым индексом.
+      // Кириллица искажена, но паттерн «Слово A. O., 123456» узнаваем.
+      expect(
+        InvoicePhotoOcr.parseLine(
+            'BapkriOB A. O., 296500 Respublika, 8-978-777-91-51'),
+        isNull,
+        reason: 'строка поставщика с индексом должна отфильтровываться',
+      );
+      // Только паттерн инициалов + индекс, без телефона.
+      expect(
+        InvoicePhotoOcr.parseLine('Vasilieva A. O., 296500, Simferopol 91'),
+        isNull,
+        reason: 'реквизиты ИП с почтовым индексом',
+      );
+    });
+
+    test('rejects RUB-prefixed footer tail', () {
+      // «RUB, A, кол-во 1, цена 1771.95» — хвост строки итогов после OCR.
+      // Фильтр по «RUB» должен отклонять такие строки.
+      expect(
+        InvoicePhotoOcr.parseLine('RUB, A 1 1771.95'),
+        isNull,
+        reason: 'хвост итоговой строки с RUB',
+      );
+      expect(
+        InvoicePhotoOcr.parseLine('rub summa 7319.69'),
+        isNull,
+        reason: 'строка с rub в нижнем регистре',
+      );
+    });
   });
 }

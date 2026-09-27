@@ -62,6 +62,7 @@ flutter build ipa             # iOS (на macOS)
 | 1.2.7 | Архивация dist, удалён GPS (вес не изменился) / dist archiving, GPS removed (size unchanged) |
 | 1.3.0 | Пороги остатков, касса дня, маржа, голосовой поиск / Low-stock thresholds, cash register, margins, voice search |
 | 1.4.0 | Telegram-автокопия базы, ярлыки Android, график цен в карточке / Telegram auto-backup, launcher shortcuts, price chart |
+| 1.5.0 | Русский OCR накладных (Tesseract, офлайн) / Russian invoice OCR (Tesseract, offline) |
 
 Каждый новый релиз: коммит + тег `vX.Y.Z` + GitHub Release с
 `TelePort_X_Windows_x64.zip` и `TelePort_X_Android_arm64-v8a.apk`.

@@ -35,6 +35,7 @@ migrate_working_dir/
 
 # Symbolication related
 app.*.symbols
+android/build/
 
 # Obfuscation related
 app.*.map.json

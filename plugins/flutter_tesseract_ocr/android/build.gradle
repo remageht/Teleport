@@ -1,0 +1,22 @@
+// Fork of flutter_tesseract_ocr 0.4.31 for TelePort.
+// Upstream is abandoned (dead jcenter, old AGP) - only what a modern
+// Gradle needs: no buildscript/jcenter, AGP and repos come from root.
+group 'io.paratoner.flutter_tesseract_ocr'
+version '1.0'
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace "io.paratoner.flutter_tesseract_ocr"
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+    }
+}
+
+dependencies {
+    // tesseract4android распакован из .aar (оригинал заброшен):
+    // classes.jar + jniLibs/<abi>/*.so лежат рядом.
+    api files('libs/tesseract-classes.jar')
+}
