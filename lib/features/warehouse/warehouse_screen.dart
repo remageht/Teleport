@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme_provider.dart';
@@ -8,6 +10,7 @@ import '../../../core/app_theme.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
 import '../../../services/export_service.dart';
+import '../../../services/photo_search_service.dart';
 import '../shared/barcode_scan_sheet.dart';
 import '../shared/app_background.dart';
 import '../shared/printer_sheet.dart';
@@ -98,6 +101,252 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   void _openProduct(Product p) => Navigator.push(context,
       MaterialPageRoute(builder: (_) => ProductDetailScreen(product: p)));
+
+  /// Поиск похожего товара по фото (dHash / aHash / pHash / color).
+  Future<void> _photoSearch() async {
+    final src = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Поиск по фото'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Снять камерой'),
+              onTap: () => Navigator.pop(c, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Выбрать файл'),
+              onTap: () => Navigator.pop(c, 'file'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (src == null) return;
+
+    String? path;
+    try {
+      if (src == 'camera') {
+        final x = await ImagePicker().pickImage(source: ImageSource.camera);
+        path = x?.path;
+      } else {
+        const group = XTypeGroup(
+          label: 'Фото',
+          extensions: ['jpg', 'jpeg', 'png', 'webp'],
+        );
+        final f = await openFile(acceptedTypeGroups: [group]);
+        path = f?.path;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось открыть фото: $e')),
+        );
+      }
+      return;
+    }
+
+    if (path == null || !File(path).existsSync()) return;
+    if (!mounted) return;
+
+    final db = context.read<AppDb>();
+    final candidates = await db.getProductsWithPhotos();
+    final validPhotos = candidates.where((p) {
+      final pp = p.photoPath;
+      return pp != null && pp.trim().isNotEmpty && File(pp).existsSync();
+    }).toList();
+
+    if (!mounted) return;
+
+    if (validPhotos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('В базе нет товаров с фото. Сначала прикрепите фото к товарам.'),
+        ),
+      );
+      return;
+    }
+
+    final isLowPhotoCount = validPhotos.length < PhotoSearchService.minRecommendedPhotos;
+
+    // Показываем индикатор выполнения
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('Сравниваем фото в базе…')),
+          ],
+        ),
+      ),
+    );
+
+    List<PhotoSearchResult> results = [];
+    try {
+      results = await PhotoSearchService.searchSimilar(
+        queryImagePath: path,
+        candidates: validPhotos,
+        limit: 5,
+      );
+    } catch (e) {
+      debugPrint('Photo search error: $e');
+    } finally {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context); // закрыть диалог загрузки
+      }
+    }
+
+    if (!mounted) return;
+
+    // Открываем панель с результатами поиска
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      File(path!),
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 40),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Поиск по фото (Топ-${results.length})',
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                        ),
+                        Text(
+                          'Сравнили с ${validPhotos.length} фото в базе',
+                          style: Theme.of(ctx).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              if (isLowPhotoCount) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade700.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: Colors.amber.shade900),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Мало фото для поиска (в базе ${validPhotos.length}, рекомендуется от 10)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.amber.shade900,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const Divider(height: 16),
+              if (results.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('Похожих товаров не найдено'),
+                  ),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: results.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final r = results[i];
+                    final p = r.product;
+                    final sim = r.similarityPct;
+                    final simColor = sim >= 75
+                        ? Colors.green.shade700
+                        : sim >= 50
+                            ? Colors.orange.shade800
+                            : Colors.grey.shade600;
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: ProductImage(product: p, size: 48),
+                      title: Text(
+                        p.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        '${p.sku.isNotEmpty ? "${p.sku} · " : ""}${p.price > 0 ? "${p.price.toStringAsFixed(0)} ₽" : "по запросу"} · ост. ${p.available.toStringAsFixed(0)} шт',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: simColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: simColor.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          '${sim.toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            color: simColor,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _openProduct(p);
+                      },
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// Голосовой поиск: надиктовать название, текст подставится в поиск.
   /// Работает на телефоне (системное распознавание), на ПК недоступно.
@@ -576,6 +825,12 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                   onPressed: _scan,
                   icon: const Icon(Icons.qr_code_scanner),
                   tooltip: 'Сканировать',
+                ),
+                const SizedBox(width: 4),
+                IconButton.filledTonal(
+                  onPressed: _photoSearch,
+                  icon: const Icon(Icons.image_search),
+                  tooltip: 'Найти по фото',
                 ),
                 const SizedBox(width: 4),
                 IconButton.filledTonal(

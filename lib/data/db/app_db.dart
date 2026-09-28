@@ -390,6 +390,26 @@ class AppDb {
     return rows.map(Product.fromRow).toList();
   }
 
+  /// Все активные товары, у которых есть путь к фото (для поиска по фото).
+  Future<List<Product>> getProductsWithPhotos() async {
+    final rows = await database.rawQuery('''
+      SELECT p.*, IFNULL(pi.price, 0) AS price,
+             IFNULL(s.available, 0) AS available,
+             IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
+      FROM products p
+      LEFT JOIN price_items pi
+        ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
+      LEFT JOIN (
+        SELECT product_id, SUM(qty - reserved) AS available
+        FROM stocks GROUP BY product_id
+      ) s ON s.product_id = p.id
+      WHERE p.is_active = 1
+        AND p.photo_path IS NOT NULL
+        AND trim(p.photo_path) != ''
+    ''');
+    return rows.map(Product.fromRow).toList();
+  }
+
   Future<Product?> findByBarcode(String code) async {
     final rows = await database.rawQuery('''
       SELECT p.*, IFNULL(pi.price,0) AS price,
