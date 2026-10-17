@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tesseract_ocr/flutter_tesseract_ocr.dart';
@@ -7,6 +6,7 @@ import 'package:image/image.dart' as img_lib;
 import 'package:path_provider/path_provider.dart';
 
 import 'invoice_photo_ocr.dart';
+import 'ocr_image_ops.dart';
 
 /// Результат Tesseract-OCR накладной.
 ///
@@ -16,18 +16,28 @@ typedef TessInvoiceResult = ({List<OcrLine> lines, String rawText});
 
 /// Офлайн-распознавание накладной через Tesseract (rus+eng).
 ///
-/// Предобработка фото:
-/// - EXIF-поворот (`bakeOrientation`)
-/// - перевод в оттенки серого
-/// - масштабирование до 2000 px по длинной стороне (Tesseract лучше читает
-///   нормализованное разрешение, не слишком маленькое и не огромное)
-/// - сохранение с качеством JPEG 88
+/// Предобработка идёт в фоновом изоляте ([compute]): декодирование 12 Мп
+/// JPEG на UI-изоляте давало фризы на средних телефонах.
 ///
-/// Стратегия поворота:
-/// Пробуем 0° → 90° → 270° CW. Останавливаемся на первом варианте
-/// с ≥ 3 распознанными строками; если ни один не дал ≥ 3 — берём
-/// вариант с наибольшим числом строк.
+/// Пайплайн: EXIF-поворот → серый → апскейл/даунскейл до 2000px →
+/// растяжка контраста → deskew → адаптивная бинаризация
+/// (см. [OcrImageOps.prepare]).
+///
+/// Три варианта поворота (0°/90°/270°) готовятся из одного декода и
+/// распознаются по очереди с коротким замыканием на ≥ 3 строках.
+/// Если строк всё ещё мало — повторный проход с psm 4 (колонки).
 class TessInvoiceOcr {
+  /// Аргументы Tesseract: сохраняем пробелы между колонками
+  /// (парсер режет хвост по ним) и явно задаём DPI.
+  static const Map<String, String> _baseArgs = {
+    'psm': '6',
+    'preserve_interword_spaces': '1',
+    'user_defined_dpi': '300',
+  };
+
+  /// Минимум строк, при котором не крутим дальше и не добавляем psm-проход.
+  static const int _enoughLines = 3;
+
   /// Основная точка входа.
   ///
   /// [imagePath] — путь к исходному фото (не удаляется).
@@ -37,78 +47,61 @@ class TessInvoiceOcr {
       return (lines: <OcrLine>[], rawText: '');
     }
 
-    // 1. Предобработка: EXIF-поворот + серый + ресайз + JPEG 88
-    File? preprocessed;
+    // 1. Подготовка вариантов 0°/90°/270° в фоновом изоляте.
+    List<String> variants = const [];
     try {
-      preprocessed = await _preprocess(file);
+      final tmpDir = await getTemporaryDirectory();
+      variants = await compute(_prepareVariants, (
+        srcPath: file.path,
+        tmpDirPath: tmpDir.path,
+      ));
     } catch (e) {
-      debugPrint('TessInvoiceOcr: preprocess failed: $e');
+      debugPrint('TessInvoiceOcr: prepare failed: $e');
     }
+    final paths = variants.isEmpty ? [file.path] : variants;
 
-    final workPath = preprocessed?.path ?? imagePath;
-
-    // 2. Попытки поворота 0° → 90° → 270°
-    const angles = [0, 90, 270];
+    // 2. Распознавание: пробуем каждый вариант, держим лучший.
     var bestLines = <OcrLine>[];
     var bestRaw = '';
-
-    File? rotFile;
+    String? bestPath;
     try {
-      for (final angle in angles) {
-        File? angleFile;
-        try {
-          if (angle == 0) {
-            angleFile = File(workPath);
-          } else {
-            angleFile = await _rotate(File(workPath), angle);
-            rotFile = angleFile; // удалим в finally
-          }
+      for (final p in paths) {
+        final raw = await _extract(p, _baseArgs);
+        if (raw == null) continue;
+        final lines = _parseRaw(raw);
+        debugPrint('TessInvoiceOcr: ${p.split(Platform.pathSeparator).last} '
+            'psm=6 lines=${lines.length}');
+        if (lines.length > bestLines.length) {
+          bestLines = lines;
+          bestRaw = raw;
+          bestPath = p;
+        }
+        if (bestLines.length >= _enoughLines) break;
+      }
 
-          final raw = await FlutterTesseractOcr.extractText(
-            angleFile.path,
-            language: 'rus+eng',
-            args: {'psm': '6'},
-          );
-
+      // 3. Мало строк — пробуем «колонковый» psm 4 по лучшему варианту.
+      // Таблица накладной из-за тонких вертикальных линий иногда режется
+      // движком на колонки, и psm 6 их перемешивает.
+      if (bestLines.length < _enoughLines && bestPath != null) {
+        final raw = await _extract(bestPath, {
+          ..._baseArgs,
+          'psm': '4',
+        });
+        if (raw != null) {
           final lines = _parseRaw(raw);
           debugPrint(
-              'TessInvoiceOcr: angle=$angle lines=${lines.length} raw=${raw.length}ch');
-
+              'TessInvoiceOcr: psm=4 lines=${lines.length}');
           if (lines.length > bestLines.length) {
             bestLines = lines;
             bestRaw = raw;
           }
-
-          // Удаляем ротированный временник сразу
-          if (angle != 0 && rotFile != null) {
-            try {
-              await rotFile.delete();
-            } catch (_) {}
-            rotFile = null;
-          }
-
-          if (bestLines.length >= 3) break; // достаточно, дальше не крутим
-        } catch (e) {
-          debugPrint('TessInvoiceOcr: angle=$angle error: $e');
-          if (rotFile != null) {
-            try {
-              await rotFile.delete();
-            } catch (_) {}
-            rotFile = null;
-          }
         }
       }
     } finally {
-      // Убираем предобработанный временник
-      if (preprocessed != null) {
+      // Убираем все временные варианты.
+      for (final p in variants) {
         try {
-          await preprocessed.delete();
-        } catch (_) {}
-      }
-      // На случай если цикл прервался с необработанным rotFile
-      if (rotFile != null) {
-        try {
-          await rotFile.delete();
+          await File(p).delete();
         } catch (_) {}
       }
     }
@@ -116,54 +109,19 @@ class TessInvoiceOcr {
     return (lines: bestLines, rawText: bestRaw);
   }
 
-  // ---------------------------------------------------------------------------
-  // Предобработка: EXIF-поворот + серый + ресайз + JPEG 88
-  // ---------------------------------------------------------------------------
-  static Future<File> _preprocess(File src) async {
-    final bytes = await src.readAsBytes();
-    var img = img_lib.decodeImage(bytes);
-    if (img == null) throw StateError('Cannot decode image');
-
-    // Применяем EXIF-ориентацию
-    img = img_lib.bakeOrientation(img);
-
-    // Серый — уменьшает шум и помогает движку
-    img = img_lib.grayscale(img);
-
-    // Масштабирование по длинной стороне до 2000 px
-    const maxSide = 2000;
-    if (img.width > maxSide || img.height > maxSide) {
-      final scale = maxSide / max(img.width, img.height);
-      img = img_lib.copyResize(
-        img,
-        width: (img.width * scale).round(),
-        height: (img.height * scale).round(),
-        interpolation: img_lib.Interpolation.linear,
+  /// Один проход OCR с перехватом ошибок движка (на десктопе плагина нет).
+  static Future<String?> _extract(
+      String path, Map<String, String> args) async {
+    try {
+      return await FlutterTesseractOcr.extractText(
+        path,
+        language: 'rus+eng',
+        args: args,
       );
+    } catch (e) {
+      debugPrint('TessInvoiceOcr: OCR error: $e');
+      return null;
     }
-
-    final tmpDir = await getTemporaryDirectory();
-    final tmpPath =
-        '${tmpDir.path}/tess_pre_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final tmpFile = File(tmpPath);
-    await tmpFile.writeAsBytes(img_lib.encodeJpg(img, quality: 88));
-    return tmpFile;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Поворот на [angle]° CW, сохранение во временный файл
-  // ---------------------------------------------------------------------------
-  static Future<File> _rotate(File src, int angle) async {
-    final bytes = await src.readAsBytes();
-    final img = img_lib.decodeImage(bytes);
-    if (img == null) throw StateError('Cannot decode image for rotation');
-    final rotated = img_lib.copyRotate(img, angle: angle);
-    final tmpDir = await getTemporaryDirectory();
-    final tmpPath =
-        '${tmpDir.path}/tess_rot${angle}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final tmpFile = File(tmpPath);
-    await tmpFile.writeAsBytes(img_lib.encodeJpg(rotated, quality: 88));
-    return tmpFile;
   }
 
   // ---------------------------------------------------------------------------
@@ -185,4 +143,32 @@ class TessInvoiceOcr {
     }
     return result;
   }
+}
+
+/// Подготовка вариантов изображения в изоляте.
+///
+/// Возвращает пути к PNG: [0°, 90°, 270°]. Выполняется один декод,
+/// дальше только повороты готовой бинарной картинки.
+/// Возвращает пустой список при ошибке декодирования (вызывающий
+/// использует оригинал файла).
+List<String> _prepareVariants(
+    ({String srcPath, String tmpDirPath}) args) {
+  final bytes = File(args.srcPath).readAsBytesSync();
+  final decoded = img_lib.decodeImage(bytes);
+  if (decoded == null) return const [];
+
+  final prepared = OcrImageOps.prepare(decoded, binarize: true);
+  final stamp = DateTime.now().millisecondsSinceEpoch;
+  final result = <String>[];
+
+  void writeVariant(String tag, img_lib.Image image) {
+    final path = '${args.tmpDirPath}/tess_${tag}_$stamp.png';
+    File(path).writeAsBytesSync(img_lib.encodePng(image));
+    result.add(path);
+  }
+
+  writeVariant('v0', prepared);
+  writeVariant('v90', img_lib.copyRotate(prepared, angle: 90));
+  writeVariant('v270', img_lib.copyRotate(prepared, angle: 270));
+  return result;
 }
