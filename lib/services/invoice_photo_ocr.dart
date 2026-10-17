@@ -262,13 +262,6 @@ class InvoicePhotoOcr {
       return null;
     }
 
-    // 1. Нормализация тысяч с пробелами (например, "2 196,18" -> "2196,18")
-    // Проверяем что перед числом пробел или начало строки, а не точка/запятая
-    line = line.replaceAllMapped(
-      RegExp(r'(?:^|(?<=\s))(\d{1,3})\s+(\d{3}[\.,]\d{2})\b'),
-      (m) => '${m.group(1)}${m.group(2)}',
-    );
-
     // 1б. Вырезаем EAN-штрихкоды (12-14 цифр подряд) ПЕРЕД любыми
     // проверками: иначе их куски становятся «количеством» и «ценой»,
     // а сам код проходит под маску телефона.
@@ -311,12 +304,107 @@ class InvoicePhotoOcr {
       ' ',
     );
 
-    // 3. Ищем все числовые совпадения в строке
+    // 2а. Починка цифр, которые OCR распознал похожими буквами
+    // ("26,Э9" → "26,39", "452,О4" → "452.04", "37,б7" → "37.67").
+    // Замена 1:1 по длине, поэтому позиции для резки названия не сдвигаются.
+    final repaired = _repairNumericTokens(line);
+
+    // 1. Склейка разреженных тысяч ("2 196,18" -> "2196,18") — вариантами
+    // строки: «2  130,40» (кол-во и цена) выглядит точно так же, и по одной
+    // строке их не отличить. Перебираем склейки всех кандидатов, каждого по
+    // отдельности и без склейки — побеждает вариант, где сходится
+    // арифметика «кол-во × цена = сумма».
+    final bases = repaired == line ? [line] : [repaired, line];
+    final variants = <String>[];
+    void addVariant(String s) {
+      if (!variants.contains(s)) variants.add(s);
+    }
+
+    for (final b in bases) {
+      final matches = _thousandGroupRe.allMatches(b).toList();
+      if (matches.isEmpty) {
+        addVariant(b);
+        continue;
+      }
+      addVariant(_mergeThousandGroupMatches(b, matches));
+      for (final m in matches) {
+        addVariant(_mergeThousandGroupMatches(b, [m]));
+      }
+      addVariant(b);
+    }
+
+    // Выигрывает разбор с более надёжным подтверждением:
+    // арифметика «кол-во × цена = сумма» (3) > двухчисельная эвристика (2)
+    // > последнее число как цена (1); при равной надёжности — первый
+    // в списке вариантов (склеенный и/или починенный).
+    _TailNumbers? best;
+    String? bestLine;
+    var bestRank = 0;
+    for (final variant in variants) {
+      final t = _extractTailNumbers(variant);
+      if (t == null) continue;
+      if (t.rank > bestRank) {
+        best = t;
+        bestRank = t.rank;
+        bestLine = variant;
+      }
+      if (bestRank == 3) break;
+    }
+    if (best == null) return null;
+
+    var qty = best.qty;
+    if (qty <= 0) qty = 1.0;
+    final price = best.price;
+    final nameEndPos = best.nameEndPos;
+
+    // Эвристика: если вычисленная цена аномально велика (>30 000 руб.),
+    // скорее всего это артефакт OCR — цифры из артикула/диапазона склеились
+    // с числовым полем (пример: «40/320» → «40160.00»). Отфильтровываем.
+    // Если товар реально стоит дороже — пользователь правит руками.
+    if (price > 30000) return null;
+
+    // 4. Срезаем лидирующие кодовые токены (номер строки, артикул,
+    // штрихкод, коды): всё без кириллицы до первого токена с кириллицей.
+    // Штрихкоды уже вырезаны раньше; это добивает артикулы вида
+    // "GP 24AUA21-2CRS BC4 40/320". Если кириллицы нет вообще
+    // (латинское название вроде "TIP36") — оставляем целиком.
+    var name = bestLine!.substring(0, nameEndPos).trim();
+    var toks =
+        name.split(' ').where((t) => t.isNotEmpty).toList();
+    if (toks.any((t) => RegExp(r'[А-Яа-я]').hasMatch(t))) {
+      var cut = 0;
+      for (final t in toks) {
+        if (RegExp(r'[А-Яа-я]').hasMatch(t)) break;
+        cut++;
+      }
+      if (cut < toks.length) {
+        toks = toks.sublist(cut);
+      }
+      name = toks.join(' ');
+    } else {
+      name = toks.join(' ');
+    }
+
+    // Зачистка знаков препинания на концах
+    name = name.replaceAll(RegExp(r'[-.,;:–—|/\\]+$'), '').trim();
+    name = name.replaceAll(RegExp(r'^[-.,;:–—|/\\]+'), '').trim();
+    name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // Должно содержать хотя бы 2 символа и буквы
+    if (name.length < 2) return null;
+    if (!RegExp(r'[A-Za-zА-Яа-я]').hasMatch(name)) return null;
+
+    return (name: name, qty: qty, price: price);
+  }
+
+  /// Числа хвоста строки, извлечённые одним из эвристических разборов.
+  /// [rank]: 3 — сошлась арифметика «кол-во × цена = сумма»,
+  /// 2 — двухчисельная эвристика, 1 — последнее число как цена.
+  static _TailNumbers? _extractTailNumbers(String line) {
     final numMatches = RegExp(r'\d+(?:[\.,]\d+)?').allMatches(line).toList();
     if (numMatches.isEmpty) return null;
 
-    double numVal(String s) =>
-        double.tryParse(s.replaceAll(',', '.')) ?? 0.0;
+    double numVal(String s) => double.tryParse(s.replaceAll(',', '.')) ?? 0.0;
 
     var qty = 1.0;
     var price = 0.0;
@@ -346,12 +434,23 @@ class InvoicePhotoOcr {
           qty = v2;
           price = v3;
           nameEndPos = m1.start;
+        } else if (_looksLikeLostDecimal(m2.group(0)!)) {
+          // Цена без запятой: "15120" — это "151,20".
+          final p = v2 / 100;
+          if ((v1 * p - v3).abs() < max(1.5, v3 * 0.05)) {
+            qty = v1;
+            price = p;
+            nameEndPos = m1.start;
+          }
+        }
+        if (price > 0) {
+          return _TailNumbers(qty, price, nameEndPos, 3);
         }
       }
     }
 
     // Если 3 числа не сошлись, проверяем последние 2 числа
-    if (price == 0 && numMatches.length >= 2) {
+    if (numMatches.length >= 2) {
       final m1 = numMatches[numMatches.length - 2];
       final m2 = numMatches[numMatches.length - 1];
 
@@ -374,66 +473,93 @@ class InvoicePhotoOcr {
             qty = v1;
             price = v2;
             nameEndPos = m1.start;
+          } else if (_looksLikeLostDecimal(m1.group(0)!)) {
+            // Цена без запятой: "15120" — это "151,20", сумма — кратное.
+            final p = v1 / 100;
+            final r = v2 / p;
+            if (r >= 2 && (r - r.round()).abs() < 0.02 && r < 1000) {
+              qty = r.roundToDouble();
+              price = p;
+              nameEndPos = m1.start;
+            }
           } else {
             qty = 1.0;
             price = v2;
             nameEndPos = m2.start;
+          }
+          if (price > 0) {
+            return _TailNumbers(qty, price, nameEndPos, 2);
           }
         }
       }
     }
 
     // Если всё ещё не нашли, берём последнее число как цену
-    if (price == 0 && numMatches.isNotEmpty) {
+    if (numMatches.isNotEmpty) {
       final lastM = numMatches.last;
       if (line.substring(lastM.end).trim().isEmpty) {
         price = numVal(lastM.group(0)!);
-        qty = 1.0;
-        nameEndPos = lastM.start;
+        if (price > 0) {
+          return _TailNumbers(1.0, price, lastM.start, 1);
+        }
       }
     }
+    return null;
+  }
 
-    if (price <= 0) return null;
-    if (qty <= 0) qty = 1.0;
-
-    // Эвристика: если вычисленная цена аномально велика (>30 000 руб.),
-    // скорее всего это артефакт OCR — цифры из артикула/диапазона склеились
-    // с числовым полем (пример: «40/320» → «40160.00»). Отфильтровываем.
-    // Если товар реально стоит дороже — пользователь правит руками.
-    if (price > 30000) return null;
-
-    // 4. Срезаем лидирующие кодовые токены (номер строки, артикул,
-    // штрихкод, коды): всё без кириллицы до первого токена с кириллицей.
-    // Штрихкоды уже вырезаны раньше; это добивает артикулы вида
-    // "GP 24AUA21-2CRS BC4 40/320". Если кириллицы нет вообще
-    // (латинское название вроде "TIP36") — оставляем целиком.
-    var name = line.substring(0, nameEndPos).trim();
-    var toks =
-        name.split(' ').where((t) => t.isNotEmpty).toList();
-    if (toks.any((t) => RegExp(r'[А-Яа-я]').hasMatch(t))) {
-      var cut = 0;
-      for (final t in toks) {
-        if (RegExp(r'[А-Яа-я]').hasMatch(t)) break;
-        cut++;
-      }
-      if (cut < toks.length) {
-        toks = toks.sublist(cut);
-      }
-      name = toks.join(' ');
-    } else {
-      name = toks.join(' ');
+  /// Склейка разреженных тысяч по конкретным совпадениям [matches]:
+  /// "1 627,38" -> "1627,38" (перед числом пробел или начало строки).
+  static String _mergeThousandGroupMatches(
+    String line,
+    List<RegExpMatch> matches,
+  ) {
+    var out = line;
+    for (final m in matches.reversed) {
+      out = out.replaceRange(m.start, m.end, '${m.group(1)}${m.group(2)}');
     }
+    return out;
+  }
 
-    // Зачистка знаков препинания на концах
-    name = name.replaceAll(RegExp(r'[-.,;:–—|/\\]+$'), '').trim();
-    name = name.replaceAll(RegExp(r'^[-.,;:–—|/\\]+'), '').trim();
-    name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+  static final _thousandGroupRe =
+      RegExp(r'(?:^|(?<=\s))(\d{1,3})\s+(\d{3}[\.,]\d{2})\b');
 
-    // Должно содержать хотя бы 2 символа и буквы
-    if (name.length < 2) return null;
-    if (!RegExp(r'[A-Za-zА-Яа-я]').hasMatch(name)) return null;
+  /// Похоже ли число на «потерявшую запятую» цену: OCR часто читает
+  /// "151,20" как "15120" (целое без разделителя, ≥4 цифр).
+  static bool _looksLikeLostDecimal(String token) =>
+      !token.contains(',') &&
+      !token.contains('.') &&
+      token.length >= 4 &&
+      int.tryParse(token) != null;
 
-    return (name: name, qty: qty, price: price);
+  /// Карта типичных подмен OCR: похожая буква вместо цифры.
+  /// Замена строго 1:1, длина строки не меняется.
+  static const _digitConfusions = <String, String>{
+    'О': '0', 'о': '0', 'O': '0', 'o': '0',
+    'З': '3', 'з': '3', 'Э': '3', 'э': '3',
+    'б': '6', 'В': '8',
+    'I': '1', 'l': '1', '|': '1',
+    'S': '5',
+  };
+
+  /// Допустимый состав «числового» токена с возможными подменами.
+  static final _numberishToken =
+      RegExp(r'^[0-9OoОоЗзЭэбВIl|S,.\-]+$');
+
+  /// Чинит цифры, распознанные похожими буквами, в токенах, которые
+  /// и без того выглядят как числа («26,Э9» → «26,39», «452,О4» → «452.04»).
+  /// Токены хотя бы с одной настоящей цифрой; чистая кириллица не трогается.
+  static String _repairNumericTokens(String line) {
+    return line.replaceAllMapped(RegExp(r'\S+'), (m) {
+      final t = m.group(0)!;
+      if (t.length < 2) return t;
+      if (!_numberishToken.hasMatch(t)) return t;
+      if (!RegExp(r'\d').hasMatch(t)) return t;
+      final buf = StringBuffer();
+      for (final ch in t.split('')) {
+        buf.write(_digitConfusions[ch] ?? ch);
+      }
+      return buf.toString();
+    });
   }
 
   /// Извлечение номера накладной и поставщика из шапки документа
@@ -464,4 +590,13 @@ class InvoicePhotoOcr {
 
     return (number: number, supplier: supplier);
   }
+}
+
+/// Числовой хвост строки накладной + качество разбора.
+class _TailNumbers {
+  final double qty;
+  final double price;
+  final int nameEndPos;
+  final int rank;
+  const _TailNumbers(this.qty, this.price, this.nameEndPos, this.rank);
 }
