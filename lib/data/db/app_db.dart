@@ -311,6 +311,21 @@ class AppDb {
       )''');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_moves_product ON moves(product_id)');
+    // Индексы из миграции v9 — нужны и на чистой установке (onUpgrade не вызывается).
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_order_lines_product ON order_lines(product_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_price_items_product ON price_items(product_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_orders_client ON orders(client_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_receipt_docs_created ON receipt_docs(created_at)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_products_cat ON products(category_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_moves_product_receipt ON moves(product_id, type, id DESC)');
     await db.execute('CREATE TABLE IF NOT EXISTS sync_cursor '
         '(entity TEXT PRIMARY KEY, cursor TEXT)');
 
