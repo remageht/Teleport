@@ -91,7 +91,18 @@ class TessUserWords {
     final hasCyr = RegExp(r'[А-Яа-яЁё]').hasMatch(t);
     final hasLat = RegExp(r'[A-Za-z]').hasMatch(t);
     if (!hasCyr && !hasLat) return;
-    if (hasCyr) rus.add(t.toLowerCase());
-    if (hasLat) eng.add(t);
+    if (hasCyr) {
+      final low = t.toLowerCase();
+      rus.add(low);
+      final cap = '${low[0].toUpperCase()}${low.substring(1)}';
+      rus.add(cap);
+    }
+    if (hasLat) {
+      eng.add(t);
+      final low = t.toLowerCase();
+      eng.add(low);
+      final cap = '${low[0].toUpperCase()}${low.substring(1)}';
+      eng.add(cap);
+    }
   }
 }

@@ -86,5 +86,29 @@ void main() {
       expect(l!.qty, 2.0);
       expect(l.price, 151.20);
     });
+
+    test('разрыв дробной части пробелом чинится (3 732,06 2 196, 18)', () {
+      final l = InvoicePhotoOcr.parseLine(
+          '7 5638 2850006081636 рот ТВ Nicedevice 3 732,06 2 196, 18');
+      expect(l, isNotNull);
+      expect(l!.qty, 3.0);
+      expect(l.price, 732.06);
+    });
+
+    test('фасовка в скобках (1/100) не принимается за количество', () {
+      final l = InvoicePhotoOcr.parseLine(
+          '12 Кабель питания черный (1/100) 130,40');
+      expect(l, isNotNull);
+      expect(l!.qty, 1.0, reason: '(1/100) — фасовка в названии, а не кол-во');
+      expect(l.price, 130.40);
+    });
+
+    test('хвост с потерянной запятой в обеих колонках (13040 13040)', () {
+      final l = InvoicePhotoOcr.parseLine(
+          'Кабель питания microUSB (1/100) 13040 13040');
+      expect(l, isNotNull);
+      expect(l!.qty, 1.0);
+      expect(l.price, 130.40);
+    });
   });
 }

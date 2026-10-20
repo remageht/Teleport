@@ -22,7 +22,7 @@ class AppDb {
   static final AppDb instance = AppDb._();
 
   /// Текущая версия схемы. Поднимать вместе с version в openDatabase.
-  static const kDbVersion = 8;
+  static const kDbVersion = 9;
 
   Database? _db;
   Database get database => _db!;
@@ -129,6 +129,23 @@ class AppDb {
             )''');
           await db.execute(
               'CREATE INDEX IF NOT EXISTS idx_cash_day ON cash_moves(day)');
+        }
+        if (oldV < 9) {
+          // Индексы для устранения узких мест (full table scan) при поиске, марже и отчетах.
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_order_lines_product ON order_lines(product_id)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_price_items_product ON price_items(product_id)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_orders_client ON orders(client_id)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_receipt_docs_created ON receipt_docs(created_at)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_products_cat ON products(category_id)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_moves_product_receipt ON moves(product_id, type, id DESC)');
         }
       },
     );
@@ -494,72 +511,89 @@ class AppDb {
   /// Влить входящие данные: товары — по updated_at (кто свежее),
   /// sold_count/qty — максимум, заказы — upsert по id.
   Future<void> mergePayload(Map<String, Object?> payload) async {
-    final products = (payload['products'] as List?) ?? const [];
-    for (final raw in products) {
-      final it = Map<String, Object?>.from(raw as Map);
-      final id = it['id'] as String?;
-      if (id == null || id.isEmpty) continue;
-      final updatedAt = (it['updated_at'] as String?) ?? '';
-      final local = await database.query('products',
-          where: 'id = ?', whereArgs: [id], limit: 1);
-      if (local.isEmpty) {
-        // Новый товар с другого устройства.
-        final ts = DateTime.now().millisecondsSinceEpoch;
-        await database.insert('products', {
-          'id': id,
-          'sku': (it['sku'] as String?) ?? 'SYNC$ts',
-          'name': (it['name'] as String?) ?? 'Без названия',
-          'description': it['description'] as String?,
-          'sold_count': (it['sold_count'] as num?)?.toInt() ?? 0,
-          'updated_at': updatedAt,
-        });
-        await setStockQty(id, (it['qty'] as num?)?.toDouble() ?? 0);
-        final price = (it['price'] as num?)?.toDouble() ?? 0;
-        if (price > 0) {
-          await database.insert(
-              'price_items',
-              {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      } else {
-        final l = local.first;
-        final localUpdated = (l['updated_at'] as String?) ?? '';
-        final soldRemote = (it['sold_count'] as num?)?.toInt() ?? 0;
-        final soldLocal = (l['sold_count'] as int?) ?? 0;
-        final updates = <String, Object?>{
-          'sold_count': soldRemote > soldLocal ? soldRemote : soldLocal,
-        };
-        if (updatedAt.compareTo(localUpdated) > 0) {
-          updates['name'] = (it['name'] as String?) ?? l['name'];
-          updates['description'] =
-              it['description'] as String? ?? l['description'];
-          updates['updated_at'] = updatedAt;
-        }
-        await database
-            .update('products', updates, where: 'id = ?', whereArgs: [id]);
-        // Остаток: берём максимум (простое правило для ручной торговли).
-        final qtyRemote = (it['qty'] as num?)?.toDouble() ?? 0;
-        final qtyLocal = await availableQty(id, 'wh-shop');
-        if (qtyRemote > qtyLocal) {
-          await setStockQty(id, qtyRemote);
-        }
-        final price = (it['price'] as num?)?.toDouble() ?? 0;
-        if (price > 0) {
-          await database.insert(
-              'price_items',
-              {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
-              conflictAlgorithm: ConflictAlgorithm.replace);
+    await database.transaction((txn) async {
+      final products = (payload['products'] as List?) ?? const [];
+      for (final raw in products) {
+        final it = Map<String, Object?>.from(raw as Map);
+        final id = it['id'] as String?;
+        if (id == null || id.isEmpty) continue;
+        final updatedAt = (it['updated_at'] as String?) ?? '';
+        final local = await txn.query('products',
+            where: 'id = ?', whereArgs: [id], limit: 1);
+        if (local.isEmpty) {
+          // Новый товар с другого устройства.
+          final ts = DateTime.now().millisecondsSinceEpoch;
+          await txn.insert('products', {
+            'id': id,
+            'sku': (it['sku'] as String?) ?? 'SYNC$ts',
+            'name': (it['name'] as String?) ?? 'Без названия',
+            'description': it['description'] as String?,
+            'sold_count': (it['sold_count'] as num?)?.toInt() ?? 0,
+            'updated_at': updatedAt,
+          });
+          final q = (it['qty'] as num?)?.toDouble() ?? 0;
+          await txn.rawInsert('''
+            INSERT INTO stocks (product_id, warehouse_id, series, cell, qty, reserved)
+            VALUES (?, 'wh-shop', NULL, NULL, ?, 0)
+            ON CONFLICT(product_id, warehouse_id, series, cell)
+            DO UPDATE SET qty = ?
+          ''', [id, q, q]);
+          final price = (it['price'] as num?)?.toDouble() ?? 0;
+          if (price > 0) {
+            await txn.insert(
+                'price_items',
+                {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        } else {
+          final l = local.first;
+          final localUpdated = (l['updated_at'] as String?) ?? '';
+          final soldRemote = (it['sold_count'] as num?)?.toInt() ?? 0;
+          final soldLocal = (l['sold_count'] as int?) ?? 0;
+          final updates = <String, Object?>{
+            'sold_count': soldRemote > soldLocal ? soldRemote : soldLocal,
+          };
+          if (updatedAt.compareTo(localUpdated) > 0) {
+            updates['name'] = (it['name'] as String?) ?? l['name'];
+            updates['description'] =
+                it['description'] as String? ?? l['description'];
+            updates['updated_at'] = updatedAt;
+          }
+          await txn
+              .update('products', updates, where: 'id = ?', whereArgs: [id]);
+          // Остаток: берём максимум (простое правило для ручной торговли).
+          final qtyRemote = (it['qty'] as num?)?.toDouble() ?? 0;
+          final stockRow = await txn.rawQuery(
+            'SELECT SUM(qty - reserved) AS av FROM stocks WHERE product_id = ? AND warehouse_id = ?',
+            [id, 'wh-shop'],
+          );
+          final qtyLocal = (stockRow.first['av'] as num?)?.toDouble() ?? 0;
+          if (qtyRemote > qtyLocal) {
+            await txn.rawInsert('''
+              INSERT INTO stocks (product_id, warehouse_id, series, cell, qty, reserved)
+              VALUES (?, 'wh-shop', NULL, NULL, ?, 0)
+              ON CONFLICT(product_id, warehouse_id, series, cell)
+              DO UPDATE SET qty = ?
+            ''', [id, qtyRemote, qtyRemote]);
+          }
+          final price = (it['price'] as num?)?.toDouble() ?? 0;
+          if (price > 0) {
+            await txn.insert(
+                'price_items',
+                {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          }
         }
       }
-    }
-    final orders = (payload['orders'] as List?) ?? const [];
-    for (final raw in orders) {
-      final o = Map<String, Object?>.from(raw as Map);
-      final id = o['id'] as String?;
-      if (id == null) continue;
-      await database.insert('orders', o,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
+      final orders = (payload['orders'] as List?) ?? const [];
+      for (final raw in orders) {
+        final o = Map<String, Object?>.from(raw as Map);
+        final id = o['id'] as String?;
+        if (id == null) continue;
+        await txn.insert('orders', o,
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    });
   }
 
   /// Пометить товар изменённым (для победы «кто свежее» при обмене).
@@ -1432,10 +1466,22 @@ class AppDb {
       'SELECT * FROM orders WHERE agent_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at DESC',
       [agentId, from, to],
     );
+    if (rows.isEmpty) return <Order>[];
+
+    final orderIds = rows.map((r) => r['id'] as String).toList();
+    final placeholders = List.filled(orderIds.length, '?').join(',');
+    final lineRows = await database.rawQuery(
+      'SELECT * FROM order_lines WHERE order_id IN ($placeholders) ORDER BY order_id, line_no',
+      orderIds,
+    );
+    final linesByOrder = <String, List<Map<String, Object?>>>{};
+    for (final l in lineRows) {
+      (linesByOrder[l['order_id'] as String] ??= []).add(l);
+    }
+
     final result = <Order>[];
     for (final r in rows) {
-      final lines = await database
-          .query('order_lines', where: 'order_id = ?', whereArgs: [r['id']]);
+      final lines = linesByOrder[r['id'] as String] ?? const [];
       result.add(Order(
         id: r['id'] as String,
         number: (r['number'] as String?) ?? '',

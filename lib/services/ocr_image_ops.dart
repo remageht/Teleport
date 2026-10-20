@@ -92,7 +92,7 @@ class OcrImageOps {
   /// Метод: бинаризуем уменьшенную копию (длинная сторона [proxySide]),
   /// крутим её маленькими шагами и ищем угол с максимальной дисперсией
   /// профиля по строкам (у выровненного текста строки «звонкие»).
-  static double findSkewAngle(img_lib.Image gray, {int proxySide = 800}) {
+  static double findSkewAngle(img_lib.Image gray, {int proxySide = 450}) {
     var proxy = gray;
     final long = max(proxy.width, proxy.height);
     if (long > proxySide) {
@@ -136,33 +136,32 @@ class OcrImageOps {
   }
 
   /// Дисперсия сумм тёмных пикселей по строкам для повёрнутой картины.
-  /// Чем ровнее строки текста, тем «звонче» профиль и выше дисперсия.
+  /// Оптимизировано: строчные смещения и однопроходная дисперсия.
   static double _profileScore(Uint8List bin, int w, int h, double angleDeg) {
     final rad = angleDeg * pi / 180.0;
     final cosA = cos(rad), sinA = sin(rad);
     final cx = w / 2.0, cy = h / 2.0;
     final rows = Int32List(h);
+    final baseSy = cy - cx * sinA;
     for (var y = 0; y < h; y++) {
-      final dy = y - cy;
+      final rowOffset = y * w;
+      final yOffset = baseSy + (y - cy) * cosA;
       for (var x = 0; x < w; x++) {
-        if (bin[y * w + x] == 0) continue;
-        final dx = x - cx;
-        final sy = (cy + dx * sinA + dy * cosA).round();
-        if (sy < 0 || sy >= h) continue;
-        rows[sy]++;
+        if (bin[rowOffset + x] == 0) continue;
+        final sy = (yOffset + x * sinA).round();
+        if (sy >= 0 && sy < h) {
+          rows[sy]++;
+        }
       }
     }
-    var sum = 0.0;
+    var sum = 0;
+    var sumSq = 0;
     for (var y = 0; y < h; y++) {
-      sum += rows[y];
+      final r = rows[y];
+      sum += r;
+      sumSq += r * r;
     }
-    final mean = sum / h;
-    var varSum = 0.0;
-    for (var y = 0; y < h; y++) {
-      final d = rows[y] - mean;
-      varSum += d * d;
-    }
-    return varSum / h;
+    return (sumSq - (sum * sum) / h) / h;
   }
 
   // ---------------------------------------------------------------------
@@ -188,10 +187,10 @@ class OcrImageOps {
       lum[i++] = p.luminance.toInt().clamp(0, 255);
     }
 
-    // Интегральное изображение (double на строку — переполнение исключено).
-    final integral = Float64List((w + 1) * (h + 1));
+    // Интегральное изображение на Int32List (в 2 раза меньше RAM и быстрее double).
+    final integral = Int32List((w + 1) * (h + 1));
     for (var y = 0; y < h; y++) {
-      var rowSum = 0.0;
+      var rowSum = 0;
       final row = y * w;
       final intRow = (y + 1) * (w + 1);
       final prevRow = y * (w + 1);
@@ -201,20 +200,21 @@ class OcrImageOps {
       }
     }
 
-    // Результат — байтами RGB (серый), одним fromBytes.
+    // Результат — байтами RGB (серый), сравнение умножением без медленного деления.
     final outBytes = Uint8List(w * h * 3);
     var o = 0;
     for (var y = 0; y < h; y++) {
       final y0 = max(0, y - half), y1 = min(h - 1, y + half);
       final intTop = y0 * (w + 1), intBottom = (y1 + 1) * (w + 1);
+      final dy = y1 - y0 + 1;
       for (var x = 0; x < w; x++) {
         final x0 = max(0, x - half), x1 = min(w - 1, x + half);
-        final area = (x1 - x0 + 1) * (y1 - y0 + 1);
+        final area = (x1 - x0 + 1) * dy;
         final sum = integral[intBottom + (x1 + 1)] -
             integral[intTop + (x1 + 1)] -
             integral[intBottom + x0] +
             integral[intTop + x0];
-        final v = lum[y * w + x] < t * (sum / area) ? 0 : 255;
+        final v = (lum[y * w + x] * area < t * sum) ? 0 : 255;
         outBytes[o++] = v;
         outBytes[o++] = v;
         outBytes[o++] = v;
@@ -287,19 +287,25 @@ class OcrImageOps {
     }
 
     void fillRow(int y, int x0, int x1) {
-      for (var yy = max(0, y - thick); yy <= min(h - 1, y + thick); yy++) {
-        for (var x = max(0, x0); x <= min(w - 1, x1); x++) {
-          target.setPixelRgba(x, yy, 255, 255, 255, 255);
-        }
-      }
+      final y0 = max(0, y - thick), y1 = min(h - 1, y + thick);
+      final xx0 = max(0, x0), xx1 = min(w - 1, x1);
+      img_lib.fillRect(target,
+          x1: xx0,
+          y1: y0,
+          x2: xx1,
+          y2: y1,
+          color: img_lib.ColorRgb8(255, 255, 255));
     }
 
     void fillCol(int x, int y0, int y1) {
-      for (var xx = max(0, x - thick); xx <= min(w - 1, x + thick); xx++) {
-        for (var y = max(0, y0); y <= min(h - 1, y1); y++) {
-          target.setPixelRgba(xx, y, 255, 255, 255, 255);
-        }
-      }
+      final x0 = max(0, x - thick), x1 = min(w - 1, x + thick);
+      final yy0 = max(0, y0), yy1 = min(h - 1, y1);
+      img_lib.fillRect(target,
+          x1: x0,
+          y1: yy0,
+          x2: x1,
+          y2: yy1,
+          color: img_lib.ColorRgb8(255, 255, 255));
     }
 
     scan(w, h, (y, x) => y * w + x, hMin, fillRow);

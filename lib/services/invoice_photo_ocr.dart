@@ -307,7 +307,12 @@ class InvoicePhotoOcr {
     // 2а. Починка цифр, которые OCR распознал похожими буквами
     // ("26,Э9" → "26,39", "452,О4" → "452.04", "37,б7" → "37.67").
     // Замена 1:1 по длине, поэтому позиции для резки названия не сдвигаются.
-    final repaired = _repairNumericTokens(line);
+    var repaired = _repairNumericTokens(line);
+
+    // Склейка дробной части, оторванной пробелом от запятой/точки ("196, 18" -> "196,18")
+    final fixDecimals = RegExp(r'(\d+)[\.,]\s+(\d{2})\b');
+    line = line.replaceAllMapped(fixDecimals, (m) => '${m.group(1)},${m.group(2)}');
+    repaired = repaired.replaceAllMapped(fixDecimals, (m) => '${m.group(1)},${m.group(2)}');
 
     // 1. Склейка разреженных тысяч ("2 196,18" -> "2196,18") — вариантами
     // строки: «2  130,40» (кол-во и цена) выглядит точно так же, и по одной
@@ -419,10 +424,11 @@ class InvoicePhotoOcr {
       final between12 = line.substring(m1.end, m2.start).trim();
       final between23 = line.substring(m2.end, m3.start).trim();
       final tailAfter = line.substring(m3.end).trim();
+      final cleanTail = tailAfter.replaceAll(RegExp(r'[\s.,;:\-—|/\\]|₽|р\.?'), '');
 
-      // Между ценой и суммой только пробелы, после суммы пусто.
+      // Между ценой и суммой только пробелы, после суммы пусто или знак валюты/точка.
       // Между кол-вом и ценой могут быть единицы измерения и галочки ("v шт", "шт", "✓").
-      if (between23.isEmpty && tailAfter.isEmpty && between12.length <= 15) {
+      if (between23.isEmpty && cleanTail.isEmpty && between12.length <= 15 && !_isInsidePackaging(line, m1, between12)) {
         final v1 = numVal(m1.group(0)!);
         final v2 = numVal(m2.group(0)!);
         final v3 = numVal(m3.group(0)!);
@@ -442,6 +448,14 @@ class InvoicePhotoOcr {
             price = p;
             nameEndPos = m1.start;
           }
+        } else if (_looksLikeLostDecimal(m3.group(0)!)) {
+          // Сумма без запятой: "2 × 151.20 = 30240"
+          final p3 = v3 / 100;
+          if ((v1 * v2 - p3).abs() < max(1.5, p3 * 0.05)) {
+            qty = v1;
+            price = v2;
+            nameEndPos = m1.start;
+          }
         }
         if (price > 0) {
           return _TailNumbers(qty, price, nameEndPos, 3);
@@ -456,8 +470,9 @@ class InvoicePhotoOcr {
 
       final between = line.substring(m1.end, m2.start).trim();
       final tailAfter = line.substring(m2.end).trim();
+      final cleanTail = tailAfter.replaceAll(RegExp(r'[\s.,;:\-—|/\\]|₽|р\.?'), '');
 
-      if (between.length <= 15 && tailAfter.isEmpty) {
+      if (between.length <= 15 && cleanTail.isEmpty) {
         final v1 = numVal(m1.group(0)!);
         final v2 = numVal(m2.group(0)!);
 
@@ -468,6 +483,16 @@ class InvoicePhotoOcr {
             qty = ratio.roundToDouble();
             price = v1;
             nameEndPos = m1.start;
+          } else if ((v1 - v2).abs() < 0.01) {
+            // v1 == v2 (цена равна сумме => кол-во = 1)
+            qty = 1.0;
+            price = _looksLikeLostDecimal(m1.group(0)!) ? v1 / 100 : v1;
+            nameEndPos = m1.start;
+          } else if (_isInsidePackaging(line, m1, between)) {
+            // m1 внутри фасовки вроде "(1/100)" или "40/320" — это не количество!
+            qty = 1.0;
+            price = _looksLikeLostDecimal(m2.group(0)!) ? v2 / 100 : v2;
+            nameEndPos = m2.start;
           } else if (v1 <= 500 && v1 == v1.roundToDouble()) {
             // v1 - целое количество, v2 - цена
             qty = v1;
@@ -484,7 +509,7 @@ class InvoicePhotoOcr {
             }
           } else {
             qty = 1.0;
-            price = v2;
+            price = _looksLikeLostDecimal(m2.group(0)!) ? v2 / 100 : v2;
             nameEndPos = m2.start;
           }
           if (price > 0) {
@@ -522,6 +547,16 @@ class InvoicePhotoOcr {
 
   static final _thousandGroupRe =
       RegExp(r'(?:^|(?<=\s))(\d{1,3})\s+(\d{3}[\.,]\d{2})\b');
+
+  /// Проверяет, находится ли токен числа внутри скобок или фасовки (например, "(1/100)", "40/320").
+  static bool _isInsidePackaging(String line, RegExpMatch m, String between) {
+    if (between.startsWith(')') || between.startsWith('/')) return true;
+    if (m.start > 0) {
+      final prevChar = line[m.start - 1];
+      if (prevChar == '/' || prevChar == '(') return true;
+    }
+    return false;
+  }
 
   /// Похоже ли число на «потерявшую запятую» цену: OCR часто читает
   /// "151,20" как "15120" (целое без разделителя, ≥4 цифр).

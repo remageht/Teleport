@@ -163,7 +163,7 @@ List<String> _prepareVariants(
 
   void writeVariant(String tag, img_lib.Image image) {
     final path = '${args.tmpDirPath}/tess_${tag}_$stamp.png';
-    File(path).writeAsBytesSync(img_lib.encodePng(image));
+    File(path).writeAsBytesSync(img_lib.encodePng(image, level: 1));
     result.add(path);
   }
 

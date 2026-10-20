@@ -73,18 +73,29 @@ class ExportService {
       TextCellValue('Позиций'),
       TextCellValue('Итого, ₽'),
     ]);
+    final orderIds = orders.map((o) => o['id'] as String).toList();
+    final countMap = <String, double>{};
+    if (orderIds.isNotEmpty) {
+      final counts = await db.database.rawQuery('''
+        SELECT order_id, COUNT(*) AS c
+        FROM order_lines
+        WHERE order_id IN (${List.filled(orderIds.length, '?').join(',')})
+        GROUP BY order_id
+      ''', orderIds);
+      for (final c in counts) {
+        countMap[c['order_id'] as String] = ((c['c'] as int?) ?? 0).toDouble();
+      }
+    }
     final byDay = <String, List<double>>{};
     for (final o in orders) {
       final dt = DateTime.tryParse(o['created_at'] as String? ?? '');
       if (dt == null) continue;
       final key =
           '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
-      final cnt = await db.database.rawQuery(
-          'SELECT COUNT(*) AS c FROM order_lines WHERE order_id = ?',
-          [o['id']]);
+      final cnt = countMap[o['id'] as String] ?? 0;
       final day = byDay.putIfAbsent(key, () => [0, 0, 0]);
       day[0] += 1;
-      day[1] += ((cnt.first['c'] as int?) ?? 0).toDouble();
+      day[1] += cnt;
       day[2] += (o['total'] as num?)?.toDouble() ?? 0;
     }
     var grand = 0.0;

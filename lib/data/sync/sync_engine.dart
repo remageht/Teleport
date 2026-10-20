@@ -59,6 +59,8 @@ class SyncEngine {
   void stop() {
     _timer?.cancel();
     _connectivitySub?.cancel();
+    _client?.close();
+    _client = null;
   }
 
   Future<void> sync() async {
