@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/app_theme.dart';
+import '../../../core/currency_provider.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
 import '../shared/app_background.dart';
@@ -447,6 +448,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget build(BuildContext context) {
     final p = _p;
     final scheme = Theme.of(context).colorScheme;
+    final currency = context.watch<CurrencyProvider>();
     return Scaffold(
       appBar: AppBar(
         title: Text(p.sku),
@@ -494,7 +496,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   onTap: _count),
               const SizedBox(width: 8),
               _infoCard(context, 'Цена',
-                  p.price > 0 ? '${p.price.toStringAsFixed(0)} ₽' : 'по запросу'),
+                  p.price > 0 ? currency.format(p.price) : 'по запросу'),
               const SizedBox(width: 8),
               _infoCard(context, 'Покупали',
                   p.soldCount > 0 ? '${p.soldCount} шт' : '—'),

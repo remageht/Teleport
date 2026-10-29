@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme_provider.dart';
+import '../../../core/currency_provider.dart';
 import '../../../core/app_theme.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
@@ -329,15 +330,9 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           .showSnackBar(SnackBar(content: Text(msg)));
     }
   }
-  /// Формат суммы с пробелами тысяч: 12340 → «12 340 ₽».
+  /// Формат суммы с учетом выбранной валюты.
   String _fmtSum(double v) {
-    final n = v.round().toString();
-    final b = StringBuffer();
-    for (var i = 0; i < n.length; i++) {
-      if (i > 0 && (n.length - i) % 3 == 0) b.write(' ');
-      b.write(n[i]);
-    }
-    return '$b ₽';
+    return context.read<CurrencyProvider>().format(v);
   }
 
   /// Компактная кнопка панели мультивыбора.
@@ -796,8 +791,9 @@ class _ProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currency = context.watch<CurrencyProvider>();
     final price =
-        p.price > 0 ? '${p.price.toStringAsFixed(0)} ₽' : 'по запросу';
+        p.price > 0 ? currency.format(p.price) : 'по запросу';
     // Бейдж остатка как на сайте: «В наличии» / «Осталось N шт» / «Нет».
     final String badge;
     final Color badgeBg;
