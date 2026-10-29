@@ -136,8 +136,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadStats() async {
-    final s = await context.read<AppDb>().storeStats();
-    if (mounted) setState(() => _stats = s);
+    try {
+      final s = await context.read<AppDb>().storeStats();
+      if (mounted) setState(() => _stats = s);
+    } catch (_) {}
   }
 
   /// Резервная копия БД: файл в Документы + «Поделиться» на телефоне.
@@ -815,9 +817,11 @@ class _SectionTitle extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-            )),
+        Expanded(
+          child: Text(text, style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              )),
+        ),
       ],
     );
   }
