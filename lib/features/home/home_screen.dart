@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/app_theme.dart';
+import '../../../core/currency_provider.dart';
 import '../../../core/session.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
@@ -356,6 +357,7 @@ class _HitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currency = context.watch<CurrencyProvider>();
     return SizedBox(
       width: 150,
       child: Card(
@@ -390,7 +392,7 @@ class _HitCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       p.price > 0
-                          ? '${p.price.toStringAsFixed(0)} ₽'
+                          ? currency.format(p.price)
                           : 'по запросу',
                       style: const TextStyle(
                           fontSize: 14,

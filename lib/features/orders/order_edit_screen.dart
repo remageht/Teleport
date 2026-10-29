@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../core/currency_provider.dart';
 import '../../../core/session.dart';
 import '../../../data/db/app_db.dart';
 import '../../../models/catalog.dart';
@@ -73,7 +74,7 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                       trailing: Text(p.price > 0
-                          ? '${p.price.toStringAsFixed(0)} ₽'
+                          ? context.read<CurrencyProvider>().format(p.price)
                           : '—'),
                       onTap: () => Navigator.pop(c, p),
                     );
@@ -198,6 +199,7 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<CurrencyProvider>();
     return Scaffold(
       appBar: AppBar(
           title: Text(_type == OrderType.realization
@@ -266,7 +268,7 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Text('Итого: ${_total.toStringAsFixed(2)} ₽',
+                      Text('Итого: ${currency.format(_total)}',
                           style: Theme.of(context).textTheme.titleLarge),
                       const Spacer(),
                       FilledButton.icon(

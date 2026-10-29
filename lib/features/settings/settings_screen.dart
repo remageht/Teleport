@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/session.dart';
 import '../../../core/theme_provider.dart';
+import '../../../core/currency_provider.dart';
 import '../../../core/app_theme.dart';
 import '../../../data/db/app_db.dart';
 import '../../../services/lan_sync.dart';
@@ -19,6 +20,7 @@ import '../../../services/telegram_backup.dart';
 import '../shared/app_background.dart';
 import '../prices/price_lists_screen.dart';
 import '../receipts/receipts_screen.dart';
+import 'widgets/currency_calculator_dialog.dart';
 
 /// Настройки: тема, Wi-Fi-синхронизация ПК ⇄ телефон, 1С-шлюз, выход.
 class SettingsScreen extends StatefulWidget {
@@ -32,6 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _host;
   late final TextEditingController _tgBot;
   late final TextEditingController _tgChat;
+  late final TextEditingController _currencyRateCtrl;
   final lan = LanSync();
   String? _myAddress;
   String _syncResult = '';
@@ -52,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _host = TextEditingController();
     _tgBot = TextEditingController();
     _tgChat = TextEditingController();
+    _currencyRateCtrl = TextEditingController();
     _detectAddress();
     _loadVersion();
     _loadStats();
@@ -116,8 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _tgBusy = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
     }
   }
@@ -158,8 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Не вышло: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не вышло: $e')));
       }
     }
   }
@@ -265,6 +267,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _host.dispose();
     _tgBot.dispose();
     _tgChat.dispose();
+    _currencyRateCtrl.dispose();
     super.dispose();
   }
 
@@ -278,6 +281,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = context.watch<ThemeProvider>();
+    final currency = context.watch<CurrencyProvider>();
+    if (_currencyRateCtrl.text.isEmpty) {
+      _currencyRateCtrl.text = currency.rate.toStringAsFixed(2);
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Настройки')),
       body: AppBackground(
@@ -313,6 +320,170 @@ class _SettingsScreenState extends State<SettingsScreen> {
               selected: {theme.scale},
               onSelectionChanged: (s) =>
                   context.read<ThemeProvider>().setScale(s.first),
+            ),
+            const Divider(height: 32),
+            const _SectionTitle('Валюта и конвертация цен'),
+            const SizedBox(height: 4),
+            Text(
+              'Позволяет видеть цены в долларах, евро, юанях и других валютах. '
+              'Базовая валюта склада и 1С остаётся в рублях.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.currency_exchange),
+                    title: const Text('Конвертация цен'),
+                    subtitle: Text(currency.isEnabled
+                        ? 'Включена (${currency.currentItem.name}, 1 ${currency.code} = ${currency.rate.toStringAsFixed(2)} ₽)'
+                        : 'Выключена (все цены в ₽)'),
+                    value: currency.isEnabled,
+                    onChanged: (v) => currency.setEnabled(v),
+                  ),
+                  if (currency.isEnabled) ...[
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Text('Выбор валюты:',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children:
+                                CurrencyProvider.supportedCurrencies.map((c) {
+                              final selected = currency.code == c.code;
+                              return ChoiceChip(
+                                label: Text('${c.code} (${c.symbol})'),
+                                selected: selected,
+                                onSelected: (val) {
+                                  if (val) {
+                                    currency.setCurrency(c.code);
+                                    _currencyRateCtrl.text =
+                                        currency.rate.toStringAsFixed(2);
+                                  }
+                                },
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _currencyRateCtrl,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                          decimal: true),
+                                  decoration: InputDecoration(
+                                    labelText:
+                                        'Курс (1 ${currency.code} = ... ₽)',
+                                    suffixText: '₽',
+                                    border: const OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                  onSubmitted: (v) {
+                                    final val = double.tryParse(
+                                        v.replaceAll(',', '.'));
+                                    if (val != null && val > 0) {
+                                      currency.setRate(val);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filledTonal(
+                                tooltip: 'Сохранить курс',
+                                icon: const Icon(Icons.check),
+                                onPressed: () {
+                                  final val = double.tryParse(_currencyRateCtrl
+                                      .text
+                                      .replaceAll(',', '.'));
+                                  if (val != null && val > 0) {
+                                    currency.setRate(val);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(
+                                              'Курс ${currency.code} сохранён: ${val.toStringAsFixed(2)} ₽')),
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: currency.isFetching
+                                      ? null
+                                      : () async {
+                                          final res = await currency.fetchCbrRates();
+                                          if (mounted) {
+                                            _currencyRateCtrl.text = currency
+                                                .rate
+                                                .toStringAsFixed(2);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text(res.message)),
+                                              );
+                                            }
+                                          }
+                                        },
+                                  icon: currency.isFetching
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        )
+                                      : const Icon(
+                                          Icons.cloud_download_outlined),
+                                  label: const Text('Курс ЦБ РФ'),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () =>
+                                      CurrencyCalculatorDialog.show(context),
+                                  icon: const Icon(Icons.calculate_outlined),
+                                  label: const Text('Калькулятор'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          const Text('Формат цен в приложении:',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          SegmentedButton<CurrencyDisplayMode>(
+                            segments: const [
+                              ButtonSegment(
+                                value: CurrencyDisplayMode.dual,
+                                label: Text('Двойной (~валюта)'),
+                              ),
+                              ButtonSegment(
+                                value: CurrencyDisplayMode.foreignOnly,
+                                label: Text('Только валюта'),
+                              ),
+                            ],
+                            selected: {currency.displayMode},
+                            onSelectionChanged: (s) =>
+                                currency.setDisplayMode(s.first),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const Divider(height: 32),
             const _SectionTitle('Синхронизация ПК ⇄ телефон'),

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'core/app_theme.dart';
+import 'core/currency_provider.dart';
 import 'core/session.dart';
 import 'core/theme_provider.dart';
 import 'data/db/app_db.dart';
@@ -36,6 +37,8 @@ Future<void> main() async {
   final syncEngine = SyncEngine(db, session);
   final theme = ThemeProvider();
   await theme.load();
+  final currency = CurrencyProvider();
+  await currency.load();
 
   // Личное пользование: автоматический вход без PIN.
   session.login(
@@ -73,6 +76,7 @@ Future<void> main() async {
       ChangeNotifierProvider<SyncState>.value(value: syncEngine.state),
       Provider<SyncEngine>.value(value: syncEngine),
       ChangeNotifierProvider<ThemeProvider>.value(value: theme),
+      ChangeNotifierProvider<CurrencyProvider>.value(value: currency),
     ],
     child: const RadioTradeApp(),
   ));
