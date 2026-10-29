@@ -106,58 +106,62 @@ class _CurrencyCalculatorDialogState extends State<CurrencyCalculatorDialog> {
           ),
         ],
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Текущий курс и быстрый выбор валюты
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
+      content: SizedBox(
+        width: 360,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Текущий курс и быстрый выбор валюты
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '1 ${item.code} = ${currency.rate.toStringAsFixed(2)} ₽',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    DropdownButton<String>(
+                      value: currency.code,
+                      underline: const SizedBox.shrink(),
+                      isDense: true,
+                      items: CurrencyProvider.supportedCurrencies
+                          .map((c) => DropdownMenuItem(
+                                value: c.code,
+                                child: Text('${c.code} (${c.symbol})'),
+                              ))
+                          .toList(),
+                      onChanged: (code) {
+                        if (code != null) {
+                          currency.setCurrency(code);
+                          _recalcFromRub();
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '1 ${item.code} = ${currency.rate.toStringAsFixed(2)} ₽',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  DropdownButton<String>(
-                    value: currency.code,
-                    underline: const SizedBox.shrink(),
-                    isDense: true,
-                    items: CurrencyProvider.supportedCurrencies
-                        .map((c) => DropdownMenuItem(
-                              value: c.code,
-                              child: Text('${c.code} (${c.symbol})'),
-                            ))
-                        .toList(),
-                    onChanged: (code) {
-                      if (code != null) {
-                        currency.setCurrency(code);
-                        _recalcFromRub();
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Поле рублей
-            TextField(
-              controller: _rubCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Сумма в рублях',
-                suffixText: '₽',
-                prefixIcon: const Icon(Icons.payments_outlined),
-                border: const OutlineInputBorder(),
-                suffixIcon: _rubCtrl.text.isNotEmpty
+              // Поле рублей
+              TextField(
+                controller: _rubCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Сумма в рублях',
+                  suffixText: '₽',
+                  prefixIcon: const Icon(Icons.payments_outlined),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _rubCtrl.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 18),
                         onPressed: () {
@@ -166,28 +170,28 @@ class _CurrencyCalculatorDialogState extends State<CurrencyCalculatorDialog> {
                         },
                       )
                     : null,
+                ),
+                onChanged: (_) => _recalcFromRub(),
               ),
-              onChanged: (_) => _recalcFromRub(),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            // Стрелка направления
-            const Center(
-              child: Icon(Icons.swap_vert, color: AppTheme.brand),
-            ),
-            const SizedBox(height: 12),
+              // Стрелка направления
+              const Center(
+                child: Icon(Icons.swap_vert, color: AppTheme.brand),
+              ),
+              const SizedBox(height: 12),
 
-            // Поле иностранной валюты
-            TextField(
-              controller: _foreignCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'В валюте (${item.name})',
-                suffixText: item.symbol,
-                prefixIcon: const Icon(Icons.monetization_on_outlined),
-                border: const OutlineInputBorder(),
-                suffixIcon: _foreignCtrl.text.isNotEmpty
+              // Поле иностранной валюты
+              TextField(
+                controller: _foreignCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'В валюте (${item.name})',
+                  suffixText: item.symbol,
+                  prefixIcon: const Icon(Icons.monetization_on_outlined),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _foreignCtrl.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear, size: 18),
                         onPressed: () {
@@ -196,41 +200,42 @@ class _CurrencyCalculatorDialogState extends State<CurrencyCalculatorDialog> {
                         },
                       )
                     : null,
+                ),
+                onChanged: (_) => _recalcFromForeign(),
               ),
-              onChanged: (_) => _recalcFromForeign(),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Быстрые кнопки добавления сумм
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                ActionChip(
-                  label: const Text('+1 000 ₽'),
-                  onPressed: () => _addRub(1000),
-                ),
-                ActionChip(
-                  label: const Text('+5 000 ₽'),
-                  onPressed: () => _addRub(5000),
-                ),
-                ActionChip(
-                  label: const Text('+10 000 ₽'),
-                  onPressed: () => _addRub(10000),
-                ),
-                ActionChip(
-                  label: Text('100 ${item.symbol}'),
-                  onPressed: () => _setForeign(100),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.refresh, size: 16),
-                  label: const Text('Сброс'),
-                  onPressed: _reset,
-                ),
-              ],
-            ),
-          ],
+              // Быстрые кнопки добавления сумм
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.center,
+                children: [
+                  ActionChip(
+                    label: const Text('+1 000 ₽'),
+                    onPressed: () => _addRub(1000),
+                  ),
+                  ActionChip(
+                    label: const Text('+5 000 ₽'),
+                    onPressed: () => _addRub(5000),
+                  ),
+                  ActionChip(
+                    label: const Text('+10 000 ₽'),
+                    onPressed: () => _addRub(10000),
+                  ),
+                  ActionChip(
+                    label: Text('100 ${item.symbol}'),
+                    onPressed: () => _setForeign(100),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Сброс'),
+                    onPressed: _reset,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
