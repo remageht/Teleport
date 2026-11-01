@@ -406,8 +406,10 @@ class AppDb {
     return rows.isEmpty ? null : Product.fromRow(rows.first);
   }
 
-  Future<double> availableQty(String productId, String warehouseId) async {
-    final rows = await database.rawQuery(
+  Future<double> availableQty(String productId, String warehouseId,
+      {DatabaseExecutor? executor}) async {
+    final db = executor ?? database;
+    final rows = await db.rawQuery(
       'SELECT SUM(qty - reserved) AS av FROM stocks WHERE product_id = ? AND warehouse_id = ?',
       [productId, warehouseId],
     );
@@ -437,11 +439,13 @@ class AppDb {
     double qty = 0,
     double price = 0,
     String? barcode,
+    DatabaseExecutor? executor,
   }) async {
+    final exec = executor ?? database;
     final ts = DateTime.now().millisecondsSinceEpoch;
     final id = 'usr-$ts';
     final sku = 'TLU${ts % 100000}';
-    final b = database.batch();
+    final b = exec.batch();
     b.insert('products', {
       'id': id, 'sku': sku, 'name': name, 'description': description,
       'barcode': barcode, 'photo_path': null, 'sold_count': 0,
@@ -455,7 +459,7 @@ class AppDb {
           {'price_list_id': 'pl-base', 'product_id': id, 'price': price});
     }
     await b.commit(noResult: true);
-    await touch(id);
+    await touch(id, executor: exec);
     return Product(
         id: id, sku: sku, name: name, description: description,
         barcode: barcode, price: price, available: qty);
@@ -499,76 +503,82 @@ class AppDb {
   /// sold_count/qty — максимум, заказы — upsert по id.
   Future<void> mergePayload(Map<String, Object?> payload) async {
     final products = (payload['products'] as List?) ?? const [];
-    for (final raw in products) {
-      final it = Map<String, Object?>.from(raw as Map);
-      final id = it['id'] as String?;
-      if (id == null || id.isEmpty) continue;
-      final updatedAt = (it['updated_at'] as String?) ?? '';
-      final local = await database.query('products',
-          where: 'id = ?', whereArgs: [id], limit: 1);
-      if (local.isEmpty) {
-        // Новый товар с другого устройства.
-        final ts = DateTime.now().millisecondsSinceEpoch;
-        await database.insert('products', {
-          'id': id,
-          'sku': (it['sku'] as String?) ?? 'SYNC$ts',
-          'name': (it['name'] as String?) ?? 'Без названия',
-          'description': it['description'] as String?,
-          'sold_count': (it['sold_count'] as num?)?.toInt() ?? 0,
-          'updated_at': updatedAt,
-        });
-        await setStockQty(id, (it['qty'] as num?)?.toDouble() ?? 0);
-        final price = (it['price'] as num?)?.toDouble() ?? 0;
-        if (price > 0) {
-          await database.insert(
-              'price_items',
-              {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-      } else {
-        final l = local.first;
-        final localUpdated = (l['updated_at'] as String?) ?? '';
-        final soldRemote = (it['sold_count'] as num?)?.toInt() ?? 0;
-        final soldLocal = (l['sold_count'] as int?) ?? 0;
-        final updates = <String, Object?>{
-          'sold_count': soldRemote > soldLocal ? soldRemote : soldLocal,
-        };
-        if (updatedAt.compareTo(localUpdated) > 0) {
-          updates['name'] = (it['name'] as String?) ?? l['name'];
-          updates['description'] =
-              it['description'] as String? ?? l['description'];
-          updates['updated_at'] = updatedAt;
-        }
-        await database
-            .update('products', updates, where: 'id = ?', whereArgs: [id]);
-        // Остаток: берём максимум (простое правило для ручной торговли).
-        final qtyRemote = (it['qty'] as num?)?.toDouble() ?? 0;
-        final qtyLocal = await availableQty(id, 'wh-shop');
-        if (qtyRemote > qtyLocal) {
-          await setStockQty(id, qtyRemote);
-        }
-        final price = (it['price'] as num?)?.toDouble() ?? 0;
-        if (price > 0) {
-          await database.insert(
-              'price_items',
-              {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
-              conflictAlgorithm: ConflictAlgorithm.replace);
+    final orders = (payload['orders'] as List?) ?? const [];
+    if (products.isEmpty && orders.isEmpty) return;
+
+    await database.transaction((txn) async {
+      for (final raw in products) {
+        final it = Map<String, Object?>.from(raw as Map);
+        final id = it['id'] as String?;
+        if (id == null || id.isEmpty) continue;
+        final updatedAt = (it['updated_at'] as String?) ?? '';
+        final local = await txn.query('products',
+            where: 'id = ?', whereArgs: [id], limit: 1);
+        if (local.isEmpty) {
+          // Новый товар с другого устройства.
+          final ts = DateTime.now().millisecondsSinceEpoch;
+          await txn.insert('products', {
+            'id': id,
+            'sku': (it['sku'] as String?) ?? 'SYNC$ts',
+            'name': (it['name'] as String?) ?? 'Без названия',
+            'description': it['description'] as String?,
+            'sold_count': (it['sold_count'] as num?)?.toInt() ?? 0,
+            'updated_at': updatedAt,
+          });
+          await setStockQty(id, (it['qty'] as num?)?.toDouble() ?? 0,
+              executor: txn);
+          final price = (it['price'] as num?)?.toDouble() ?? 0;
+          if (price > 0) {
+            await txn.insert(
+                'price_items',
+                {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        } else {
+          final l = local.first;
+          final localUpdated = (l['updated_at'] as String?) ?? '';
+          final soldRemote = (it['sold_count'] as num?)?.toInt() ?? 0;
+          final soldLocal = (l['sold_count'] as int?) ?? 0;
+          final updates = <String, Object?>{
+            'sold_count': soldRemote > soldLocal ? soldRemote : soldLocal,
+          };
+          if (updatedAt.compareTo(localUpdated) > 0) {
+            updates['name'] = (it['name'] as String?) ?? l['name'];
+            updates['description'] =
+                it['description'] as String? ?? l['description'];
+            updates['updated_at'] = updatedAt;
+          }
+          await txn
+              .update('products', updates, where: 'id = ?', whereArgs: [id]);
+          // Остаток: берём максимум (простое правило для ручной торговли).
+          final qtyRemote = (it['qty'] as num?)?.toDouble() ?? 0;
+          final qtyLocal = await availableQty(id, 'wh-shop', executor: txn);
+          if (qtyRemote > qtyLocal) {
+            await setStockQty(id, qtyRemote, executor: txn);
+          }
+          final price = (it['price'] as num?)?.toDouble() ?? 0;
+          if (price > 0) {
+            await txn.insert(
+                'price_items',
+                {'price_list_id': 'pl-base', 'product_id': id, 'price': price},
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          }
         }
       }
-    }
-    final orders = (payload['orders'] as List?) ?? const [];
-    for (final raw in orders) {
-      final o = Map<String, Object?>.from(raw as Map);
-      final id = o['id'] as String?;
-      if (id == null) continue;
-      await database.insert('orders', o,
-          conflictAlgorithm: ConflictAlgorithm.ignore);
-    }
+      for (final raw in orders) {
+        final o = Map<String, Object?>.from(raw as Map);
+        final id = o['id'] as String?;
+        if (id == null) continue;
+        await txn.insert('orders', o,
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    });
   }
 
   /// Пометить товар изменённым (для победы «кто свежее» при обмене).
-  Future<void> touch(String id) async {
-    await database.update(
+  Future<void> touch(String id, {DatabaseExecutor? executor}) async {
+    final db = executor ?? database;
+    await db.update(
         'products',
         {'updated_at': DateTime.now().toIso8601String()},
         where: 'id = ?',
@@ -821,8 +831,10 @@ class AppDb {
     double price = 0,
     String? note,
     String? receiptId,
+    DatabaseExecutor? executor,
   }) async {
-    await database.insert('moves', {
+    final db = executor ?? database;
+    await db.insert('moves', {
       'product_id': productId,
       'type': type,
       'qty': qty,
@@ -851,8 +863,39 @@ class AppDb {
     String? cell,
     String? note,
     String? receiptId,
+    DatabaseExecutor? executor,
   }) async {
-    final rows = await database.query('stocks',
+    if (executor != null) {
+      await _receiveGoodsTxn(executor,
+          productId: productId,
+          qty: qty,
+          buyPrice: buyPrice,
+          cell: cell,
+          note: note,
+          receiptId: receiptId);
+    } else {
+      await database.transaction((txn) async {
+        await _receiveGoodsTxn(txn,
+            productId: productId,
+            qty: qty,
+            buyPrice: buyPrice,
+            cell: cell,
+            note: note,
+            receiptId: receiptId);
+      });
+    }
+  }
+
+  Future<void> _receiveGoodsTxn(
+    DatabaseExecutor db, {
+    required String productId,
+    required double qty,
+    double buyPrice = 0,
+    String? cell,
+    String? note,
+    String? receiptId,
+  }) async {
+    final rows = await db.query('stocks',
         columns: ['cell'],
         where: "product_id = ? AND warehouse_id = 'wh-shop'",
         whereArgs: [productId],
@@ -863,7 +906,7 @@ class AppDb {
             : cell.trim())
         : rows.first['cell'] as String?;
     if (rows.isEmpty) {
-      await database.insert('stocks', {
+      await db.insert('stocks', {
         'product_id': productId,
         'warehouse_id': 'wh-shop',
         'series': null,
@@ -872,7 +915,7 @@ class AppDb {
         'reserved': 0,
       });
     } else {
-      await database.rawUpdate(
+      await db.rawUpdate(
           'UPDATE stocks SET qty = qty + ? WHERE product_id = ? '
           "AND warehouse_id = 'wh-shop' AND IFNULL(cell,'') = IFNULL(?, '')",
           [qty, productId, target]);
@@ -883,22 +926,28 @@ class AppDb {
         qty: qty,
         price: buyPrice,
         note: note,
-        receiptId: receiptId);
+        receiptId: receiptId,
+        executor: db);
     if (receiptId != null) {
-      await database.rawUpdate(
+      await db.rawUpdate(
         'UPDATE receipt_docs SET total = total + ? WHERE id = ?',
         [qty * buyPrice, receiptId],
       );
     }
-    await touch(productId);
+    await touch(productId, executor: db);
   }
 
   // ---- Накладные (журнал приёмок) ----
 
-  Future<String> createReceipt(
-      {String? number, String? supplier, String? photoPath}) async {
+  Future<String> createReceipt({
+    String? number,
+    String? supplier,
+    String? photoPath,
+    DatabaseExecutor? executor,
+  }) async {
+    final db = executor ?? database;
     final id = 'rc-${DateTime.now().millisecondsSinceEpoch}';
-    await database.insert('receipt_docs', {
+    await db.insert('receipt_docs', {
       'id': id,
       'number': number,
       'supplier': supplier,
@@ -1199,8 +1248,10 @@ class AppDb {
   }
 
   /// Обновить остаток одной позиции (инвентаризация / приёмка).
-  Future<void> setStockQty(String productId, double qty, {String? cell}) async {
-    await database.rawInsert('''
+  Future<void> setStockQty(String productId, double qty,
+      {String? cell, DatabaseExecutor? executor}) async {
+    final db = executor ?? database;
+    await db.rawInsert('''
       INSERT INTO stocks (product_id, warehouse_id, series, cell, qty, reserved)
       VALUES (?, 'wh-shop', NULL, ?, ?, 0)
       ON CONFLICT(product_id, warehouse_id, series, cell)
@@ -1211,14 +1262,32 @@ class AppDb {
   /// Учесть возврат товара: плюс остаток, минус счётчик популярности,
   /// запись в историю движений.
   Future<void> registerReturn(String productId, double qty,
-      {double price = 0, String? note}) async {
-    final rows = await database.query('stocks',
+      {double price = 0, String? note, DatabaseExecutor? executor}) async {
+    if (executor != null) {
+      await _registerReturnTxn(executor, productId, qty,
+          price: price, note: note);
+    } else {
+      await database.transaction((txn) async {
+        await _registerReturnTxn(txn, productId, qty,
+            price: price, note: note);
+      });
+    }
+  }
+
+  Future<void> _registerReturnTxn(
+    DatabaseExecutor db,
+    String productId,
+    double qty, {
+    double price = 0,
+    String? note,
+  }) async {
+    final rows = await db.query('stocks',
         columns: ['cell'],
         where: "product_id = ? AND warehouse_id = 'wh-shop'",
         whereArgs: [productId],
         limit: 1);
     if (rows.isEmpty) {
-      await database.insert('stocks', {
+      await db.insert('stocks', {
         'product_id': productId,
         'warehouse_id': 'wh-shop',
         'series': null,
@@ -1227,12 +1296,12 @@ class AppDb {
         'reserved': 0,
       });
     } else {
-      await database.rawUpdate(
+      await db.rawUpdate(
           'UPDATE stocks SET qty = qty + ? WHERE product_id = ? '
           "AND warehouse_id = 'wh-shop' AND IFNULL(cell,'') = IFNULL(?, '')",
           [qty, productId, rows.first['cell']]);
     }
-    await database.execute(
+    await db.execute(
         'UPDATE products SET sold_count = MAX(0, sold_count - ?) WHERE id = ?',
         [qty.toInt(), productId]);
     await logMove(
@@ -1240,8 +1309,9 @@ class AppDb {
         type: 'return',
         qty: qty,
         price: price,
-        note: note);
-    await touch(productId);
+        note: note,
+        executor: db);
+    await touch(productId, executor: db);
   }
 
   /// Сколько уже вернули по заказу (по примечанию с номером).
@@ -1256,8 +1326,30 @@ class AppDb {
   /// Учесть продажу: минус остаток по ячейкам, плюс счётчик популярности,
   /// запись в историю движений.
   Future<void> registerSale(String productId, double qty,
-      {double price = 0, String? note, String warehouseId = 'wh-shop'}) async {
-    final rows = await database.query(
+      {double price = 0,
+      String? note,
+      String warehouseId = 'wh-shop',
+      DatabaseExecutor? executor}) async {
+    if (executor != null) {
+      await _registerSaleTxn(executor, productId, qty,
+          price: price, note: note, warehouseId: warehouseId);
+    } else {
+      await database.transaction((txn) async {
+        await _registerSaleTxn(txn, productId, qty,
+            price: price, note: note, warehouseId: warehouseId);
+      });
+    }
+  }
+
+  Future<void> _registerSaleTxn(
+    DatabaseExecutor db,
+    String productId,
+    double qty, {
+    double price = 0,
+    String? note,
+    String warehouseId = 'wh-shop',
+  }) async {
+    final rows = await db.query(
       'stocks',
       where: 'product_id = ? AND warehouse_id = ? AND qty > 0',
       whereArgs: [productId, warehouseId],
@@ -1270,7 +1362,7 @@ class AppDb {
       final current = (r['qty'] as num?)?.toDouble() ?? 0.0;
       final deduct = current >= remaining ? remaining : current;
       final newQty = current - deduct;
-      await database.rawUpdate(
+      await db.rawUpdate(
         'UPDATE stocks SET qty = ? WHERE product_id = ? AND warehouse_id = ? AND IFNULL(cell, \'\') = IFNULL(?, \'\')',
         [newQty, productId, warehouseId, r['cell']],
       );
@@ -1278,21 +1370,21 @@ class AppDb {
     }
 
     if (rows.isEmpty) {
-      final anyRow = await database.query(
+      final anyRow = await db.query(
         'stocks',
         where: 'product_id = ? AND warehouse_id = ?',
         whereArgs: [productId, warehouseId],
         limit: 1,
       );
       if (anyRow.isNotEmpty) {
-        await database.rawUpdate(
+        await db.rawUpdate(
           'UPDATE stocks SET qty = MAX(0, qty - ?) WHERE product_id = ? AND warehouse_id = ? AND IFNULL(cell, \'\') = IFNULL(?, \'\')',
           [qty, productId, warehouseId, anyRow.first['cell']],
         );
       }
     }
 
-    await database.execute(
+    await db.execute(
         'UPDATE products SET sold_count = sold_count + ? WHERE id = ?',
         [qty.toInt(), productId]);
     await logMove(
@@ -1300,8 +1392,9 @@ class AppDb {
         type: 'sale',
         qty: qty,
         price: price,
-        note: note);
-    await touch(productId);
+        note: note,
+        executor: db);
+    await touch(productId, executor: db);
   }
 
   Future<double> priceFor(String productId, [String? priceListId]) async {
@@ -1447,22 +1540,52 @@ class AppDb {
 
   // ---- Заказы ----
 
-  Future<void> saveOrder(Order o) async {
-    final db = database;
-    await db.insert('orders', o.toRow(),
+  Future<void> saveOrder(Order o, {DatabaseExecutor? executor}) async {
+    if (executor != null) {
+      await _saveOrderTxn(executor, o);
+    } else {
+      await database.transaction((txn) async {
+        await _saveOrderTxn(txn, o);
+      });
+    }
+  }
+
+  Future<void> _saveOrderTxn(DatabaseExecutor txn, Order o) async {
+    await txn.insert('orders', o.toRow(),
         conflictAlgorithm: ConflictAlgorithm.replace);
-    await db.delete('order_lines', where: 'order_id = ?', whereArgs: [o.id]);
+    await txn.delete('order_lines', where: 'order_id = ?', whereArgs: [o.id]);
     var n = 0;
-    final b = db.batch();
+    final b = txn.batch();
     for (final l in o.lines) {
       b.insert('order_lines', l.toRow(o.id, n++));
     }
     await b.commit(noResult: true);
-    await db.insert('outbox', {
+    await txn.insert('outbox', {
       'entity': 'order',
       'op': 'insert',
       'payload': jsonEncode(o.toJson()),
       'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// Атомарное сохранение заказа и (при реализации) списание остатков по ячейкам в единой транзакции.
+  Future<void> saveOrderWithStock(Order o, {String? warehouseId}) async {
+    await database.transaction((txn) async {
+      await _saveOrderTxn(txn, o);
+      if (o.type == OrderType.realization) {
+        final wh = warehouseId ??
+            (o.warehouseId.isNotEmpty ? o.warehouseId : 'wh-shop');
+        for (final l in o.lines) {
+          await _registerSaleTxn(
+            txn,
+            l.productId,
+            l.qty,
+            price: l.price,
+            note: o.number,
+            warehouseId: wh,
+          );
+        }
+      }
     });
   }
 

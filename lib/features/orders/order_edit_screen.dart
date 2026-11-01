@@ -192,15 +192,7 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         createdAt: now,
         lines: _lines,
       );
-      await db.saveOrder(order);
-      if (_type == OrderType.realization) {
-        for (final l in _lines) {
-          await db.registerSale(l.productId, l.qty,
-              price: l.price,
-              note: order.number,
-              warehouseId: _warehouseId);
-        }
-      }
+      await db.saveOrderWithStock(order, warehouseId: _warehouseId);
       if (!mounted) return;
       // Живой экран успеха: галочка + сумма, авто-возврат.
       await Navigator.push(
@@ -213,6 +205,12 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         ),
       );
       if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка сохранения заказа: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
