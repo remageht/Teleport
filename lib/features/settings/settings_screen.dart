@@ -35,7 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _tgBot;
   late final TextEditingController _tgChat;
   late final TextEditingController _currencyRateCtrl;
-  final lan = LanSync();
+  final lan = LanSync.instance;
   String? _myAddress;
   String _syncResult = '';
   String _appVersion = '';
