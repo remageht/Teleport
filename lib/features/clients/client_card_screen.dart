@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -142,8 +143,11 @@ class _ClientCardScreenState extends State<ClientCardScreen> {
     await db.database.insert('outbox', {
       'entity': 'photo_report',
       'op': 'insert',
-      'payload':
-          '{"client_id":"${widget.client.id}","photos":[],"created_at":"${DateTime.now().toIso8601String()}"}',
+      'payload': jsonEncode({
+        'client_id': widget.client.id,
+        'photos': <String>[],
+        'created_at': DateTime.now().toIso8601String(),
+      }),
       'created_at': DateTime.now().toIso8601String(),
     });
     if (context.mounted) {
