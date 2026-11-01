@@ -21,6 +21,12 @@ class _BarcodeSheetState extends State<_BarcodeSheet> {
   final bool _cameraFailed = false;
 
   @override
+  void dispose() {
+    _manual.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
@@ -56,11 +62,17 @@ class _BarcodeSheetState extends State<_BarcodeSheet> {
               labelText: 'Код вручную / HID-сканер',
               suffixIcon: Icon(Icons.keyboard),
             ),
-            onSubmitted: (v) => Navigator.pop(context, v),
+            onSubmitted: (v) {
+              final trimmed = v.trim();
+              Navigator.pop(context, trimmed.isEmpty ? null : trimmed);
+            },
           ),
           const SizedBox(height: 8),
           FilledButton(
-            onPressed: () => Navigator.pop(context, _manual.text),
+            onPressed: () {
+              final trimmed = _manual.text.trim();
+              Navigator.pop(context, trimmed.isEmpty ? null : trimmed);
+            },
             child: const Text('Принять'),
           ),
           const SizedBox(height: 16),

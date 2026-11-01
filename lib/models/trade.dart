@@ -68,7 +68,8 @@ class Order {
   })  : createdAt = createdAt ?? DateTime.now(),
         lines = lines ?? [];
 
-  double get total => lines.fold(0, (s, l) => s + l.total);
+  double get total =>
+      lines.fold(0.0, (s, l) => s + l.total) * (1 - clientDiscountPct / 100);
 
   Map<String, Object?> toRow() => {
         'id': id,
@@ -92,10 +93,13 @@ class Order {
         'id': id,
         'number': number,
         'client_id': clientId,
+        'client_name': clientName,
         'type': type.name,
         'warehouse_id': warehouseId,
         'agent_id': agentId,
         'pay_type': payType.name,
+        'client_discount_pct': clientDiscountPct,
+        'visit_id': visitId,
         'total': total,
         'created_at': createdAt.toIso8601String(),
         'lines': lines
@@ -163,9 +167,7 @@ class Visit {
     this.task,
     List<String>? photoPaths,
     this.syncState = 'pending',
-  }) : photoPaths = photoPhotos(photoPaths);
-
-  static List<String> photoPhotos(List<String>? p) => p ?? [];
+  }) : photoPaths = photoPaths ?? [];
 
   Map<String, Object?> toJson() => {
         'id': id,
