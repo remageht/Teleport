@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -163,8 +164,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       await db.database.insert('outbox', {
         'entity': 'stock_count',
         'op': 'insert',
-        'payload':
-            '{"product_id":"${_p.id}","qty":$newQty,"sku":"${_p.sku}"}',
+        'payload': jsonEncode({
+          'product_id': _p.id,
+          'qty': newQty,
+          'sku': _p.sku,
+        }),
         'created_at': DateTime.now().toIso8601String(),
       });
     }
@@ -200,8 +204,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     await db.database.insert('outbox', {
       'entity': 'stock_count',
       'op': 'insert',
-      'payload':
-          '{"product_id":"${_p.id}","qty":$qty,"sku":"${_p.sku}"}',
+      'payload': jsonEncode({
+        'product_id': _p.id,
+        'qty': qty,
+        'sku': _p.sku,
+      }),
       'created_at': DateTime.now().toIso8601String(),
     });
     await _load();
