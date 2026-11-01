@@ -95,6 +95,7 @@ class _CurrencyCalculatorDialogState extends State<CurrencyCalculatorDialog> {
     final item = currency.currentItem;
 
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: Row(
         children: [
           const Icon(Icons.currency_exchange, color: AppTheme.brand),
@@ -106,8 +107,8 @@ class _CurrencyCalculatorDialogState extends State<CurrencyCalculatorDialog> {
           ),
         ],
       ),
-      content: SizedBox(
-        width: 360,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -120,31 +121,36 @@ class _CurrencyCalculatorDialogState extends State<CurrencyCalculatorDialog> {
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
-                    Expanded(
-                      child: Text(
-                        '1 ${item.code} = ${currency.rate.toStringAsFixed(2)} ₽',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                    Text(
+                      '1 ${item.code} = ${currency.rate.toStringAsFixed(2)} ₽',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    const SizedBox(width: 8),
-                    DropdownButton<String>(
-                      value: currency.code,
-                      underline: const SizedBox.shrink(),
-                      isDense: true,
-                      items: CurrencyProvider.supportedCurrencies
-                          .map((c) => DropdownMenuItem(
-                                value: c.code,
-                                child: Text('${c.code} (${c.symbol})'),
-                              ))
-                          .toList(),
-                      onChanged: (code) {
-                        if (code != null) {
-                          currency.setCurrency(code);
-                          _recalcFromRub();
-                        }
-                      },
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: DropdownButton<String>(
+                        value: currency.code,
+                        underline: const SizedBox.shrink(),
+                        isDense: true,
+                        items: CurrencyProvider.supportedCurrencies
+                            .map((c) => DropdownMenuItem(
+                                  value: c.code,
+                                  child: Text('${c.code} (${c.symbol})'),
+                                ))
+                            .toList(),
+                        onChanged: (code) {
+                          if (code != null) {
+                            currency.setCurrency(code);
+                            _recalcFromRub();
+                          }
+                        },
+                      ),
                     ),
                   ],
                 ),

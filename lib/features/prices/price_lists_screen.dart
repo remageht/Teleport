@@ -86,22 +86,24 @@ class _PriceListsScreenState extends State<PriceListsScreen> {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Новый прайс'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: name,
-                  autofocus: true,
-                  decoration:
-                      const InputDecoration(labelText: 'Название')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: pct,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Скидка от розницы, %')),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: name,
+                    autofocus: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Название')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: pct,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Скидка от розницы, %')),
+              ],
+            ),
           ),
           actions: [
             TextButton(
