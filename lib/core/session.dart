@@ -47,6 +47,11 @@ class Session extends ChangeNotifier {
   void logout() {
     userId = null;
     userName = null;
+    role = Role.agent;
+    mode = WorkMode.preSelling;
+    warehouseId = null;
+    organizationId = null;
+    authToken = null;
     notifyListeners();
   }
 }
