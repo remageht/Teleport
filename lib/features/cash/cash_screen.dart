@@ -63,34 +63,38 @@ class _CashScreenState extends State<CashScreen> {
   Future<void> _openDay() async {
     final db = context.read<AppDb>();
     final ctrl = TextEditingController();
-    final v = await showDialog<double>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Утренний остаток'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
-          decoration:
-              const InputDecoration(labelText: 'Наличных в кассе, ₽'),
+    try {
+      final v = await showDialog<double>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Утренний остаток'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Наличных в кассе, ₽'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(
+                    c,
+                    double.tryParse(
+                        ctrl.text.replaceAll(',', '.'))),
+                child: const Text('Открыть день')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(
-                  c,
-                  double.tryParse(
-                      ctrl.text.replaceAll(',', '.'))),
-              child: const Text('Открыть день')),
-        ],
-      ),
-    );
-    if (v == null) return;
-    await db.addCashMove(day: _day, kind: 'open', amount: v);
-    await _load();
+      );
+      if (v == null) return;
+      await db.addCashMove(day: _day, kind: 'open', amount: v);
+      await _load();
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   Future<void> _manualMove() async {
@@ -99,141 +103,150 @@ class _CashScreenState extends State<CashScreen> {
     var method = 'cash';
     final amount = TextEditingController();
     final note = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: const Text('Внесение / выплата'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                      value: 'in', label: Text('Внести')),
-                  ButtonSegment(
-                      value: 'out', label: Text('Выплатить')),
-                ],
-                selected: {kind},
-                onSelectionChanged: (s) =>
-                    setD(() => kind = s.first),
-              ),
-              const SizedBox(height: 8),
-              DropdownButtonFormField<String>(
-                initialValue: method,
-                decoration:
-                    const InputDecoration(labelText: 'Способ'),
-                items: [
-                  for (final e in _methods.entries)
-                    DropdownMenuItem(
-                        value: e.key, child: Text(e.value)),
-                ],
-                onChanged: (v) =>
-                    setD(() => method = v ?? 'cash'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: amount,
-                autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
-                        decimal: true),
-                decoration:
-                    const InputDecoration(labelText: 'Сумма, ₽ *'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: note,
-                decoration: const InputDecoration(
-                    labelText: 'Комментарий'),
-              ),
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => StatefulBuilder(
+          builder: (c, setD) => AlertDialog(
+            title: const Text('Внесение / выплата'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                        value: 'in', label: Text('Внести')),
+                    ButtonSegment(
+                        value: 'out', label: Text('Выплатить')),
+                  ],
+                  selected: {kind},
+                  onSelectionChanged: (s) =>
+                      setD(() => kind = s.first),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: method,
+                  decoration:
+                      const InputDecoration(labelText: 'Способ'),
+                  items: [
+                    for (final e in _methods.entries)
+                      DropdownMenuItem(
+                          value: e.key, child: Text(e.value)),
+                  ],
+                  onChanged: (v) =>
+                      setD(() => method = v ?? 'cash'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: amount,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(
+                          decimal: true),
+                  decoration:
+                      const InputDecoration(labelText: 'Сумма, ₽ *'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: note,
+                  decoration: const InputDecoration(
+                      labelText: 'Комментарий'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(c, false),
+                  child: const Text('Отмена')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(c, true),
+                  child: const Text('Записать')),
             ],
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('Отмена')),
-            FilledButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Записать')),
-          ],
         ),
-      ),
-    );
-    if (ok != true) return;
-    final v =
-        double.tryParse(amount.text.replaceAll(',', '.')) ?? 0;
-    if (v <= 0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Укажите сумму')));
+      );
+      if (ok != true) return;
+      final v =
+          double.tryParse(amount.text.replaceAll(',', '.')) ?? 0;
+      if (v <= 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Укажите сумму')));
+        }
+        return;
       }
-      return;
+      await db.addCashMove(
+            day: _day,
+            kind: kind,
+            method: method,
+            amount: v,
+            note: note.text.trim().isEmpty
+                ? null
+                : note.text.trim(),
+          );
+      await _load();
+    } finally {
+      amount.dispose();
+      note.dispose();
     }
-    await db.addCashMove(
-          day: _day,
-          kind: kind,
-          method: method,
-          amount: v,
-          note: note.text.trim().isEmpty
-              ? null
-              : note.text.trim(),
-        );
-    await _load();
   }
 
   Future<void> _closeDay() async {
     final db = context.read<AppDb>();
     final ctrl = TextEditingController(
         text: _expected.toStringAsFixed(0));
-    final actual = await showDialog<double>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Вечерняя сверка'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                'Должно быть: ${_expected.toStringAsFixed(2)} ₽'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              keyboardType:
-                  const TextInputType.numberWithOptions(
-                      decimal: true),
-              decoration: const InputDecoration(
-                  labelText: 'Посчитано фактически, ₽'),
-            ),
+    try {
+      final actual = await showDialog<double>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Вечерняя сверка'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  'Должно быть: ${_expected.toStringAsFixed(2)} ₽'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(
+                        decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Посчитано фактически, ₽'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(
+                    c,
+                    double.tryParse(
+                        ctrl.text.replaceAll(',', '.'))),
+                child: const Text('Закрыть день')),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(
-                  c,
-                  double.tryParse(
-                      ctrl.text.replaceAll(',', '.'))),
-              child: const Text('Закрыть день')),
-        ],
-      ),
-    );
-    if (actual == null) return;
-    await db.addCashMove(
-        day: _day,
-        kind: 'close',
-        amount: actual,
-        note:
-            'расхождение ${(actual - _expected).toStringAsFixed(2)}');
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(actual >= _expected
-              ? 'День закрыт. Излишек ${(actual - _expected).toStringAsFixed(2)} ₽'
-              : 'День закрыт. Недостача ${(_expected - actual).toStringAsFixed(2)} ₽')));
+      );
+      if (actual == null) return;
+      await db.addCashMove(
+          day: _day,
+          kind: 'close',
+          amount: actual,
+          note:
+              'расхождение ${(actual - _expected).toStringAsFixed(2)}');
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(actual >= _expected
+                ? 'День закрыт. Излишек ${(actual - _expected).toStringAsFixed(2)} ₽'
+                : 'День закрыт. Недостача ${(_expected - actual).toStringAsFixed(2)} ₽')));
+      }
+    } finally {
+      ctrl.dispose();
     }
   }
 

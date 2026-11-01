@@ -115,51 +115,55 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final db = context.read<AppDb>();
     final ctrl = TextEditingController(
         text: max.toStringAsFixed(max % 1 == 0 ? 0 : 2));
-    final qty = await showDialog<double>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(_names[l.productId]?.name ?? l.productId,
-            maxLines: 2),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-              labelText: 'Вернуть, шт (макс ${max.toStringAsFixed(0)})'),
+    try {
+      final qty = await showDialog<double>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(_names[l.productId]?.name ?? l.productId,
+              maxLines: 2),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+                labelText: 'Вернуть, шт (макс ${max.toStringAsFixed(0)})'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(
+                    c,
+                    double.tryParse(
+                        ctrl.text.replaceAll(',', '.'))),
+                child: const Text('Вернуть')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(
-                  c,
-                  double.tryParse(
-                      ctrl.text.replaceAll(',', '.'))),
-              child: const Text('Вернуть')),
-        ],
-      ),
-    );
-    if (qty == null || qty <= 0) return;
-    if (qty > max) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(
-                'Больше ${max.toStringAsFixed(0)} вернуть нельзя')));
+      );
+      if (qty == null || qty <= 0) return;
+      if (qty > max) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'Больше ${max.toStringAsFixed(0)} вернуть нельзя')));
+        }
+        return;
       }
-      return;
-    }
-    await db.registerReturn(
-      l.productId,
-      qty,
-      price: l.price,
-      note: 'Возврат по заказу ${widget.order.number}',
-    );
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Возврат принят, остаток пополнен')));
+      await db.registerReturn(
+        l.productId,
+        qty,
+        price: l.price,
+        note: 'Возврат по заказу ${widget.order.number}',
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Возврат принят, остаток пополнен')));
+      }
+    } finally {
+      ctrl.dispose();
     }
   }
 

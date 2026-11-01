@@ -25,6 +25,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final all = await context.read<AppDb>().allClients();
     final q = _search.text.toLowerCase();
