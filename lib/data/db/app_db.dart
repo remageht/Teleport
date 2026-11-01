@@ -31,40 +31,44 @@ class AppDb {
   /// Путь к файлу БД — для резервного копирования.
   String get dbPath => _dbPath!;
 
-  Future<Database> open() async {
-    if (_db != null) return _db!;
-    final dir = await getApplicationSupportDirectory();
-    _dbPath = p.join(dir.path, 'radiotrade.db');    // Переезд 1.0.0: новый ID приложения = новая папка данных.
-    // Если своей базы ещё нет, подхватываем самую свежую старую.
-    if (Platform.isWindows && !File(_dbPath!).existsSync()) {
-      await Directory(p.dirname(_dbPath!)).create(recursive: true);
-      final appData = Platform.environment['APPDATA'];
-      if (appData != null) {
-        File? best;
-        for (final rel in [
-          p.join('com.example', 'TelePort', 'radiotrade.db'),
-          p.join('com.example', 'radiotrade', 'radiotrade.db'),
-        ]) {
-          final f = File(p.join(appData, rel));
-          if (f.existsSync() &&
-              (best == null ||
-                  f.statSync().size > best.statSync().size)) {
-            best = f;
+  Future<Database> open([String? customPath]) async {
+    if (_db != null && customPath == null) return _db!;
+    if (customPath != null) {
+      _dbPath = customPath;
+    } else {
+      final dir = await getApplicationSupportDirectory();
+      _dbPath = p.join(dir.path, 'radiotrade.db'); // Переезд 1.0.0: новый ID приложения = новая папка данных.
+      // Если своей базы ещё нет, подхватываем самую свежую старую.
+      if (Platform.isWindows && !File(_dbPath!).existsSync()) {
+        await Directory(p.dirname(_dbPath!)).create(recursive: true);
+        final appData = Platform.environment['APPDATA'];
+        if (appData != null) {
+          File? best;
+          for (final rel in [
+            p.join('com.example', 'TelePort', 'radiotrade.db'),
+            p.join('com.example', 'radiotrade', 'radiotrade.db'),
+          ]) {
+            final f = File(p.join(appData, rel));
+            if (f.existsSync() &&
+                (best == null ||
+                    f.statSync().size > best.statSync().size)) {
+              best = f;
+            }
+          }
+          if (best != null) {
+            try {
+              await best.copy(_dbPath!);
+            } catch (_) {}
           }
         }
-        if (best != null) {
-          try {
-            await best.copy(_dbPath!);
-          } catch (_) {}
-        }
       }
+      // Бэкап перед возможной миграцией — данные человека не должны слететь.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await backupBeforeUpgrade(
+            dir.path, prefs.getInt('db_version') ?? 0);
+      } catch (_) {}
     }
-    // Бэкап перед возможной миграцией — данные человека не должны слететь.
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await backupBeforeUpgrade(
-          dir.path, prefs.getInt('db_version') ?? 0);
-    } catch (_) {}
     _db = await openDatabase(
       _dbPath!,
       version: kDbVersion,
@@ -1249,14 +1253,45 @@ class AppDb {
     return (rows.first['q'] as num?)?.toDouble() ?? 0;
   }
 
-  /// Учесть продажу: минус остаток, плюс счётчик популярности,
+  /// Учесть продажу: минус остаток по ячейкам, плюс счётчик популярности,
   /// запись в историю движений.
   Future<void> registerSale(String productId, double qty,
-      {double price = 0, String? note}) async {
-    await database.execute('''
-      UPDATE stocks SET qty = MAX(0, qty - ?)
-      WHERE product_id = ? AND warehouse_id = 'wh-shop'
-    ''', [qty, productId]);
+      {double price = 0, String? note, String warehouseId = 'wh-shop'}) async {
+    final rows = await database.query(
+      'stocks',
+      where: 'product_id = ? AND warehouse_id = ? AND qty > 0',
+      whereArgs: [productId, warehouseId],
+      orderBy: 'qty DESC, cell ASC',
+    );
+
+    var remaining = qty;
+    for (final r in rows) {
+      if (remaining <= 0) break;
+      final current = (r['qty'] as num?)?.toDouble() ?? 0.0;
+      final deduct = current >= remaining ? remaining : current;
+      final newQty = current - deduct;
+      await database.rawUpdate(
+        'UPDATE stocks SET qty = ? WHERE product_id = ? AND warehouse_id = ? AND IFNULL(cell, \'\') = IFNULL(?, \'\')',
+        [newQty, productId, warehouseId, r['cell']],
+      );
+      remaining -= deduct;
+    }
+
+    if (rows.isEmpty) {
+      final anyRow = await database.query(
+        'stocks',
+        where: 'product_id = ? AND warehouse_id = ?',
+        whereArgs: [productId, warehouseId],
+        limit: 1,
+      );
+      if (anyRow.isNotEmpty) {
+        await database.rawUpdate(
+          'UPDATE stocks SET qty = MAX(0, qty - ?) WHERE product_id = ? AND warehouse_id = ? AND IFNULL(cell, \'\') = IFNULL(?, \'\')',
+          [qty, productId, warehouseId, anyRow.first['cell']],
+        );
+      }
+    }
+
     await database.execute(
         'UPDATE products SET sold_count = sold_count + ? WHERE id = ?',
         [qty.toInt(), productId]);
@@ -1573,7 +1608,10 @@ class AppDb {
     }
   }
 
-  Future<void> close() async => await _db?.close();
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
 }
 
 /// Режим сортировки каталога.
