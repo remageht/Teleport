@@ -16,11 +16,21 @@ class SyncState extends ChangeNotifier {
   int pending = 0;
   String? lastError;
 
-  void update({bool? syncing, DateTime? lastSync, int? pending, String? lastError}) {
-    this.syncing = syncing ?? this.syncing;
-    this.lastSync = lastSync ?? this.lastSync;
-    this.pending = pending ?? this.pending;
-    if (lastError != null) this.lastError = lastError;
+  void update({
+    bool? syncing,
+    DateTime? lastSync,
+    int? pending,
+    String? lastError,
+    bool clearError = false,
+  }) {
+    if (syncing != null) this.syncing = syncing;
+    if (lastSync != null) this.lastSync = lastSync;
+    if (pending != null) this.pending = pending;
+    if (clearError) {
+      this.lastError = null;
+    } else if (lastError != null) {
+      this.lastError = lastError;
+    }
     notifyListeners();
   }
 }
@@ -58,17 +68,35 @@ class SyncEngine {
 
   void stop() {
     _timer?.cancel();
+    _timer = null;
     _connectivitySub?.cancel();
+    _connectivitySub = null;
+    _client?.close();
+    _client = null;
+  }
+
+  bool _disposed = false;
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    stop();
+    state.dispose();
   }
 
   Future<void> sync() async {
     if (state.syncing) return;
-    state.update(syncing: true, lastError: null as String?);
+    state.update(syncing: true);
     try {
       await _push();
       await _pull();
       final pending = await _pendingCount();
-      state.update(syncing: false, lastSync: DateTime.now(), pending: pending);
+      state.update(
+        syncing: false,
+        lastSync: DateTime.now(),
+        pending: pending,
+        clearError: true,
+      );
     } catch (e) {
       state.update(syncing: false, lastError: e.toString());
     }
@@ -144,6 +172,35 @@ class SyncEngine {
     await _applyProducts(data['products'] as List? ?? []);
     await _applyClients(data['clients'] as List? ?? []);
     await _applyServerStocks(data['stocks']);
+    await _saveCursors(data);
+  }
+
+  Future<void> _saveCursors(Map<String, dynamic> data) async {
+    final b = db.database.batch();
+    if (data['cursors'] is Map) {
+      final cursors = data['cursors'] as Map;
+      for (final e in cursors.entries) {
+        if (e.value != null) {
+          b.insert(
+            'sync_cursor',
+            {'entity': e.key.toString(), 'cursor': e.value.toString()},
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+    }
+    for (final entity in const ['products', 'clients', 'stocks']) {
+      final cursorVal = data['cursor_$entity'] ??
+          (entity == 'products' ? data['cursor'] : null);
+      if (cursorVal != null) {
+        b.insert(
+          'sync_cursor',
+          {'entity': entity, 'cursor': cursorVal.toString()},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    }
+    await b.commit(noResult: true);
   }
 
   Future<void> _applyProducts(List items) async {

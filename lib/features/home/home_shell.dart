@@ -46,6 +46,12 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   @override
+  void dispose() {
+    context.read<SyncEngine>().stop();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     final sync = context.watch<SyncState>();
