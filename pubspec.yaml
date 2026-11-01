@@ -1,7 +1,7 @@
 name: radiotrade
 description: RadioTrade — мобильная торговля радиокомпонентами (pre-selling / van-selling).
 publish_to: "none"
-version: 1.5.1+26
+version: 1.5.2+27
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
