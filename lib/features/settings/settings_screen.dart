@@ -86,7 +86,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _sendTgNow() async {
-    final dbPath = context.read<AppDb>().dbPath;
+    final db = context.read<AppDb>();
+    final dbPath = db.dbPath;
     await _saveTg();
     final token = _tgBot.text.trim();
     final chat = _tgChat.text.trim();
@@ -100,6 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     setState(() => _tgBusy = true);
     try {
+      await db.walCheckpoint();
       await TelegramBackup.sendDb(
         botToken: token,
         chatId: chat,

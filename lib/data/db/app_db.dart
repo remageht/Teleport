@@ -35,7 +35,7 @@ class AppDb {
     if (_db != null && customPath == null) return _db!;
     if (customPath != null) {
       _dbPath = customPath;
-    } else {
+    } else if (_dbPath == null) {
       final dir = await getApplicationSupportDirectory();
       _dbPath = p.join(dir.path, 'radiotrade.db'); // Переезд 1.0.0: новый ID приложения = новая папка данных.
       // Если своей базы ещё нет, подхватываем самую свежую старую.
@@ -1584,26 +1584,59 @@ class AppDb {
     await b.commit(noResult: true);
   }
 
+  /// Сбросить активные страницы WAL на диск перед резервным копированием.
+  Future<void> walCheckpoint() async {
+    try {
+      await database.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (_) {}
+  }
+
   /// Восстановить базу из файла копии: замена с откатом при ошибке.
   Future<void> restoreFrom(File src) async {
     await close();
     _db = null;
     final dst = File(_dbPath!);
+    final wal = File('$_dbPath-wal');
+    final shm = File('$_dbPath-shm');
     final bak = File('$_dbPath.bak');
+    final bakWal = File('$_dbPath-wal.bak');
+    final bakShm = File('$_dbPath-shm.bak');
+
     if (await dst.exists()) {
       await dst.copy(bak.path);
     }
+    if (await wal.exists()) {
+      await wal.copy(bakWal.path);
+      await wal.delete();
+    }
+    if (await shm.exists()) {
+      await shm.copy(bakShm.path);
+      await shm.delete();
+    }
+
     try {
       await src.copy(dst.path);
       await open();
       await database.rawQuery(
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'");
       if (await bak.exists()) await bak.delete();
+      if (await bakWal.exists()) await bakWal.delete();
+      if (await bakShm.exists()) await bakShm.delete();
     } catch (e) {
+      await close();
       if (await bak.exists()) {
         await bak.copy(dst.path);
-        await open();
+        await bak.delete();
       }
+      if (await bakWal.exists()) {
+        await bakWal.copy(wal.path);
+        await bakWal.delete();
+      }
+      if (await bakShm.exists()) {
+        await bakShm.copy(shm.path);
+        await bakShm.delete();
+      }
+      await open();
       rethrow;
     }
   }
