@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.telemaster.teleport"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "28.1.13356709" 
+    ndkVersion = "28.2.13676358" 
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
