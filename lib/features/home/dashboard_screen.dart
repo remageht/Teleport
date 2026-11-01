@@ -196,8 +196,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         AnimBar(
                           label: _byCat[i].name,
                           value: '${_byCat[i].qty} шт',
-                          fraction: _byCat[i].qty /
-                              (_byCat.first.qty * 1.0),
+                          fraction: _byCat.first.qty <= 0
+                              ? 0.0
+                              : (_byCat[i].qty / (_byCat.first.qty * 1.0))
+                                  .clamp(0.0, 1.0),
                           color: catColors[i % catColors.length],
                         ),
                     ],

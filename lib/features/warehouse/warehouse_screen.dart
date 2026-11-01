@@ -890,8 +890,9 @@ class _ProductCard extends StatelessWidget {
                   ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -971,6 +972,7 @@ class _ProductCard extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
             ),
           ],
         ),

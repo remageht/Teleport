@@ -27,6 +27,13 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   PayType _payType = PayType.cash;
   late final String _warehouseId;
   final _clientName = 'Покупатель (розница)';
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -94,11 +101,14 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
     final avail = await db.availableQty(p.id, _warehouseId);
     final qty = await _askQty(p, price, avail);
     if (qty == null || qty <= 0) return;
-    if (_type == OrderType.realization && qty > avail) {
+    final inCart = _lines
+        .where((l) => l.productId == p.id)
+        .fold(0.0, (s, l) => s + l.qty);
+    if (_type == OrderType.realization && (qty + inCart) > avail) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content:
-              Text('На складе только $avail шт')));
+          content: Text(
+              'На складе только ${avail.toStringAsFixed(0)} шт (в заказе уже ${inCart.toStringAsFixed(0)} шт)')));
       return;
     }
     setState(() {
@@ -113,32 +123,36 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
     });
   }
 
-  Future<double?> _askQty(Product p, double price, double avail) {
+  Future<double?> _askQty(Product p, double price, double avail) async {
     final ctrl = TextEditingController(text: '1');
-    return showDialog<double>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(p.name, maxLines: 3),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Цена: ${price.toStringAsFixed(2)} ₽ / ${p.unit} · на складе: ${avail.toStringAsFixed(0)}'),
-            TextField(
-                controller: ctrl,
-                autofocus: true,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Количество')),
+    try {
+      return await showDialog<double>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(p.name, maxLines: 3),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Цена: ${price.toStringAsFixed(2)} ₽ / ${p.unit} · на складе: ${avail.toStringAsFixed(0)}'),
+              TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Количество')),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, double.tryParse(ctrl.text.trim().replaceAll(',', '.'))),
+                child: const Text('Добавить')),
           ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, double.tryParse(ctrl.text)),
-              child: const Text('Добавить')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   Future<void> _scan() async {
@@ -159,42 +173,47 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
   double get _total => _lines.fold(0, (s, l) => s + l.total);
 
   Future<void> _save() async {
-    if (_lines.isEmpty) return;
-    final session = context.read<Session>();
-    final db = context.read<AppDb>();
-    final now = DateTime.now();
-    final order = Order(
-      id: 'ord-${now.microsecondsSinceEpoch}',
-      number: '${now.day}${now.month}/${now.hour}${now.minute}',
-      clientId: widget.client?.id ?? 'retail',
-      clientName: widget.client?.name ?? _clientName,
-      type: _type,
-      warehouseId: _warehouseId,
-      agentId: session.userId ?? '',
-      payType: _payType,
-      clientDiscountPct: widget.client?.discountPct ?? 0,
-      createdAt: now,
-      lines: _lines,
-    );
-    await db.saveOrder(order);
-    if (_type == OrderType.realization) {
-      for (final l in _lines) {
-        await db.registerSale(l.productId, l.qty,
-            price: l.price, note: order.number);
+    if (_lines.isEmpty || _saving) return;
+    setState(() => _saving = true);
+    try {
+      final session = context.read<Session>();
+      final db = context.read<AppDb>();
+      final now = DateTime.now();
+      final order = Order(
+        id: 'ord-${now.microsecondsSinceEpoch}',
+        number: '${now.day}${now.month}/${now.hour}${now.minute}',
+        clientId: widget.client?.id ?? 'retail',
+        clientName: widget.client?.name ?? _clientName,
+        type: _type,
+        warehouseId: _warehouseId,
+        agentId: session.userId ?? '',
+        payType: _payType,
+        clientDiscountPct: widget.client?.discountPct ?? 0,
+        createdAt: now,
+        lines: _lines,
+      );
+      await db.saveOrder(order);
+      if (_type == OrderType.realization) {
+        for (final l in _lines) {
+          await db.registerSale(l.productId, l.qty,
+              price: l.price, note: order.number);
+        }
       }
-    }
-    if (!mounted) return;
-    // Живой экран успеха: галочка + сумма, авто-возврат.
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SuccessScreen(
-          title: _type == OrderType.realization ? 'Продажа проведена' : 'Заказ сохранён',
-          subtitle: '${_total.toStringAsFixed(2)} ₽ · ${_lines.length} позиций',
+      if (!mounted) return;
+      // Живой экран успеха: галочка + сумма, авто-возврат.
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SuccessScreen(
+            title: _type == OrderType.realization ? 'Продажа проведена' : 'Заказ сохранён',
+            subtitle: '${_total.toStringAsFixed(2)} ₽ · ${_lines.length} позиций',
+          ),
         ),
-      ),
-    );
-    if (mounted) Navigator.pop(context);
+      );
+      if (mounted) Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -272,9 +291,16 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                           style: Theme.of(context).textTheme.titleLarge),
                       const Spacer(),
                       FilledButton.icon(
-                        onPressed: _lines.isEmpty ? null : _save,
-                        icon: const Icon(Icons.check),
-                        label: const Text('Провести'),
+                        onPressed: (_lines.isEmpty || _saving) ? null : _save,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.check),
+                        label: Text(_saving ? 'Проведение…' : 'Провести'),
                       ),
                     ],
                   ),
