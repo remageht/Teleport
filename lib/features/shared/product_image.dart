@@ -134,7 +134,7 @@ class ProductImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final cat = categoryOf(product);
     final photo = product.photoPath;
-    final hasPhoto = photo != null && File(photo).existsSync();
+    final hasPhoto = photo != null && photo.trim().isNotEmpty;
 
     return Hero(
       tag: 'img-${product.id}',

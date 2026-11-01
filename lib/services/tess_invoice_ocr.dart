@@ -121,32 +121,14 @@ class TessInvoiceOcr {
   // ---------------------------------------------------------------------------
   static Future<File> _preprocess(File src) async {
     final bytes = await src.readAsBytes();
-    var img = img_lib.decodeImage(bytes);
-    if (img == null) throw StateError('Cannot decode image');
-
-    // Применяем EXIF-ориентацию
-    img = img_lib.bakeOrientation(img);
-
-    // Серый — уменьшает шум и помогает движку
-    img = img_lib.grayscale(img);
-
-    // Масштабирование по длинной стороне до 2000 px
-    const maxSide = 2000;
-    if (img.width > maxSide || img.height > maxSide) {
-      final scale = maxSide / max(img.width, img.height);
-      img = img_lib.copyResize(
-        img,
-        width: (img.width * scale).round(),
-        height: (img.height * scale).round(),
-        interpolation: img_lib.Interpolation.linear,
-      );
-    }
+    final processedBytes = await compute(_tessPreprocessWorker, bytes);
+    if (processedBytes == null) throw StateError('Cannot decode image');
 
     final tmpDir = await getTemporaryDirectory();
     final tmpPath =
         '${tmpDir.path}/tess_pre_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final tmpFile = File(tmpPath);
-    await tmpFile.writeAsBytes(img_lib.encodeJpg(img, quality: 88));
+    await tmpFile.writeAsBytes(processedBytes);
     return tmpFile;
   }
 
@@ -155,14 +137,14 @@ class TessInvoiceOcr {
   // ---------------------------------------------------------------------------
   static Future<File> _rotate(File src, int angle) async {
     final bytes = await src.readAsBytes();
-    final img = img_lib.decodeImage(bytes);
-    if (img == null) throw StateError('Cannot decode image for rotation');
-    final rotated = img_lib.copyRotate(img, angle: angle);
+    final rotatedBytes =
+        await compute(_tessRotateWorker, (bytes: bytes, angle: angle));
+    if (rotatedBytes == null) throw StateError('Cannot decode image for rotation');
     final tmpDir = await getTemporaryDirectory();
     final tmpPath =
         '${tmpDir.path}/tess_rot${angle}_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final tmpFile = File(tmpPath);
-    await tmpFile.writeAsBytes(img_lib.encodeJpg(rotated, quality: 88));
+    await tmpFile.writeAsBytes(rotatedBytes);
     return tmpFile;
   }
 
@@ -186,3 +168,34 @@ class TessInvoiceOcr {
     return result;
   }
 }
+
+/// Фоновый воркер изолята: EXIF-поворот + серый + ресайз + кодирование в JPEG.
+Uint8List? _tessPreprocessWorker(Uint8List bytes) {
+  var img = img_lib.decodeImage(bytes);
+  if (img == null) return null;
+
+  img = img_lib.bakeOrientation(img);
+  img = img_lib.grayscale(img);
+
+  const maxSide = 2000;
+  if (img.width > maxSide || img.height > maxSide) {
+    final scale = maxSide / max(img.width, img.height);
+    img = img_lib.copyResize(
+      img,
+      width: (img.width * scale).round(),
+      height: (img.height * scale).round(),
+      interpolation: img_lib.Interpolation.linear,
+    );
+  }
+
+  return img_lib.encodeJpg(img, quality: 88);
+}
+
+/// Фоновый воркер изолята: поворот на заданный угол CW + кодирование в JPEG.
+Uint8List? _tessRotateWorker(({Uint8List bytes, int angle}) args) {
+  final img = img_lib.decodeImage(args.bytes);
+  if (img == null) return null;
+  final rotated = img_lib.copyRotate(img, angle: args.angle);
+  return img_lib.encodeJpg(rotated, quality: 88);
+}
+

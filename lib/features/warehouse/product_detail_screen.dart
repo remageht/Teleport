@@ -422,9 +422,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (ok != true) return;
     // Удаляем и файл фото, если был.
     final photo = _p.photoPath;
-    if (photo != null && File(photo).existsSync()) {
+    if (photo != null && photo.isNotEmpty) {
       try {
-        File(photo).deleteSync();
+        final f = File(photo);
+        if (await f.exists()) await f.delete();
       } catch (_) {}
     }
     await db.deleteProduct(_p.id);
