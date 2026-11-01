@@ -54,61 +54,69 @@ class _CatalogsScreenState extends State<CatalogsScreen> {
   Future<void> _addDialog() async {
     final db = context.read<AppDb>();
     final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Новый каталог'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(
-              labelText: 'Название, например «Транзисторы»'),
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Новый каталог'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(
+                labelText: 'Название, например «Транзисторы»'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Создать')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Создать')),
-        ],
-      ),
-    );
-    if (ok != true || ctrl.text.trim().isEmpty) return;
-    await db.addCategory(ctrl.text.trim());
-    await _load();
+      );
+      if (ok != true || ctrl.text.trim().isEmpty) return;
+      await db.addCategory(ctrl.text.trim());
+      await _load();
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   Future<void> _renameDialog(
       ({String id, String name, int count}) c) async {
     final db = context.read<AppDb>();
     final ctrl = TextEditingController(text: c.name);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (d) => AlertDialog(
-        title: const Text('Переименовать каталог'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration:
-              const InputDecoration(labelText: 'Новое название'),
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('Переименовать каталог'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration:
+                const InputDecoration(labelText: 'Новое название'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(d, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(d, true),
+                child: const Text('Сохранить')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(d, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(d, true),
-              child: const Text('Сохранить')),
-        ],
-      ),
-    );
-    if (ok != true || ctrl.text.trim().isEmpty) return;
-    await db.renameCategory(c.id, ctrl.text.trim());
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Каталог переименован')));
+      );
+      if (ok != true || ctrl.text.trim().isEmpty) return;
+      await db.renameCategory(c.id, ctrl.text.trim());
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Каталог переименован')));
+      }
+    } finally {
+      ctrl.dispose();
     }
   }
 

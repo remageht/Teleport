@@ -23,6 +23,12 @@ class _LoginScreenState extends State<LoginScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _pinCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final db = context.read<AppDb>();
     final users = await db.database.query('users');

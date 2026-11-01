@@ -39,104 +39,117 @@ class _PriceListsScreenState extends State<PriceListsScreen> {
   Future<double?> _pctDialog(String title, double initial) async {
     final ctrl =
         TextEditingController(text: initial.toStringAsFixed(0));
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(
-              decimal: true),
-          decoration:
-              const InputDecoration(labelText: 'Скидка, %', suffixText: '%'),
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(
+                decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Скидка, %', suffixText: '%'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Сохранить')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Сохранить')),
-        ],
-      ),
-    );
-    if (ok != true) return null;
-    final v = double.tryParse(ctrl.text.replaceAll(',', '.'));
-    if (v == null || v < 0 || v > 90) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Скидка: от 0 до 90%')));
+      );
+      if (ok != true) return null;
+      final v = double.tryParse(ctrl.text.replaceAll(',', '.'));
+      if (v == null || v < 0 || v > 90) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Скидка: от 0 до 90%')));
+        }
+        return null;
       }
-      return null;
+      return v;
+    } finally {
+      ctrl.dispose();
     }
-    return v;
   }
 
   Future<void> _addListDialog() async {
     final db = context.read<AppDb>();
     final name = TextEditingController();
     final pct = TextEditingController(text: '5');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Новый прайс'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: name,
-                autofocus: true,
-                decoration:
-                    const InputDecoration(labelText: 'Название')),
-            const SizedBox(height: 8),
-            TextField(
-                controller: pct,
-                keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true),
-                decoration: const InputDecoration(
-                    labelText: 'Скидка от розницы, %')),
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Новый прайс'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: name,
+                  autofocus: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Название')),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: pct,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
+                  decoration: const InputDecoration(
+                      labelText: 'Скидка от розницы, %')),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Создать')),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Создать')),
-        ],
-      ),
-    );
-    if (ok != true || name.text.trim().isEmpty) return;
-    final v =
-        double.tryParse(pct.text.replaceAll(',', '.')) ?? 0;
-    await db.addPriceList(name.text.trim(), v.clamp(0, 90).toDouble());
-    await _load();
+      );
+      if (ok != true || name.text.trim().isEmpty) return;
+      final v =
+          double.tryParse(pct.text.replaceAll(',', '.')) ?? 0;
+      await db.addPriceList(name.text.trim(), v.clamp(0, 90).toDouble());
+      await _load();
+    } finally {
+      name.dispose();
+      pct.dispose();
+    }
   }
 
   Future<void> _renameListDialog(Map<String, Object?> l) async {
     final db = context.read<AppDb>();
     final ctrl =
         TextEditingController(text: l['name'] as String? ?? '');
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Переименовать прайс'),
-        content: TextField(controller: ctrl, autofocus: true),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Сохранить')),
-        ],
-      ),
-    );
-    if (ok != true || ctrl.text.trim().isEmpty) return;
-    await db.renamePriceList(l['id'] as String, ctrl.text.trim());
-    await _load();
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Переименовать прайс'),
+          content: TextField(controller: ctrl, autofocus: true),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Сохранить')),
+          ],
+        ),
+      );
+      if (ok != true || ctrl.text.trim().isEmpty) return;
+      await db.renamePriceList(l['id'] as String, ctrl.text.trim());
+      await _load();
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   @override

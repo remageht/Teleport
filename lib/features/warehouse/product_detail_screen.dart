@@ -70,112 +70,121 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         text: currentQty.toStringAsFixed(currentQty % 1 == 0 ? 0 : 2));
     var catId = _p.categoryId;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: const Text('Редактировать товар'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: name,
-                    autofocus: true,
-                    decoration: const InputDecoration(labelText: 'Наименование')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: desc,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: 'Описание')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: cell,
-                    decoration: const InputDecoration(
-                        labelText: 'Место (Коробка 3 · 2-5)')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: price,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Цена, ₽')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: minQty,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(
-                        labelText:
-                            'Минимум, шт (пусто — без контроля)')),
-                const SizedBox(height: 8),
-                TextField(
-                    controller: qty,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(labelText: 'Остаток, шт')),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String?>(
-                  initialValue: catId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Каталог'),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Без каталога')),
-                    ..._cats.map((k) => DropdownMenuItem(
-                        value: k.id, child: Text(k.name))),
-                  ],
-                  onChanged: (v) => setD(() => catId = v),
-                ),
-              ],
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => StatefulBuilder(
+          builder: (c, setD) => AlertDialog(
+            title: const Text('Редактировать товар'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                      controller: name,
+                      autofocus: true,
+                      decoration: const InputDecoration(labelText: 'Наименование')),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: desc,
+                      maxLines: 2,
+                      decoration: const InputDecoration(labelText: 'Описание')),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: cell,
+                      decoration: const InputDecoration(
+                          labelText: 'Место (Коробка 3 · 2-5)')),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: price,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Цена, ₽')),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: minQty,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: const InputDecoration(
+                          labelText:
+                              'Минимум, шт (пусто — без контроля)')),
+                  const SizedBox(height: 8),
+                  TextField(
+                      controller: qty,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: const InputDecoration(labelText: 'Остаток, шт')),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: catId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Каталог'),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Без каталога')),
+                      ..._cats.map((k) => DropdownMenuItem(
+                          value: k.id, child: Text(k.name))),
+                    ],
+                    onChanged: (v) => setD(() => catId = v),
+                  ),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(c, false),
+                  child: const Text('Отмена')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(c, true),
+                  child: const Text('Сохранить')),
+            ],
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('Отмена')),
-            FilledButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Сохранить')),
-          ],
         ),
-      ),
-    );
-    if (ok != true) return;
-    await db.updateProduct(
-      id: _p.id,
-      name: name.text,
-      description: desc.text.trim().isEmpty ? null : desc.text.trim(),
-      cell: cell.text,
-      price: double.tryParse(price.text.replaceAll(',', '.')),
-      categoryId: catId,
-    );
-    await db.setMinQty(
-        _p.id, double.tryParse(minQty.text.replaceAll(',', '.')) ?? 0);
-    final newQty = double.tryParse(qty.text.replaceAll(',', '.'));
-    if (newQty != null && newQty != currentQty) {
-      await db.setStockQty(_p.id, newQty,
-          cell: cell.text.trim().isNotEmpty
-              ? cell.text.trim()
-              : (_cells.isNotEmpty ? _cells.first.cell : null));
-      await db.logMove(
-          productId: _p.id,
-          type: 'count',
-          qty: newQty,
-          note:
-              'Правка карточки: было ${currentQty.toStringAsFixed(0)}, стало ${newQty.toStringAsFixed(0)}');
-      await db.database.insert('outbox', {
-        'entity': 'stock_count',
-        'op': 'insert',
-        'payload': jsonEncode({
-          'product_id': _p.id,
-          'qty': newQty,
-          'sku': _p.sku,
-        }),
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    }
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Сохранено')));
+      );
+      if (ok != true) return;
+      await db.updateProduct(
+        id: _p.id,
+        name: name.text,
+        description: desc.text.trim().isEmpty ? null : desc.text.trim(),
+        cell: cell.text,
+        price: double.tryParse(price.text.replaceAll(',', '.')),
+        categoryId: catId,
+      );
+      await db.setMinQty(
+          _p.id, double.tryParse(minQty.text.replaceAll(',', '.')) ?? 0);
+      final newQty = double.tryParse(qty.text.replaceAll(',', '.'));
+      if (newQty != null && newQty != currentQty) {
+        await db.setStockQty(_p.id, newQty,
+            cell: cell.text.trim().isNotEmpty
+                ? cell.text.trim()
+                : (_cells.isNotEmpty ? _cells.first.cell : null));
+        await db.logMove(
+            productId: _p.id,
+            type: 'count',
+            qty: newQty,
+            note:
+                'Правка карточки: было ${currentQty.toStringAsFixed(0)}, стало ${newQty.toStringAsFixed(0)}');
+        await db.database.insert('outbox', {
+          'entity': 'stock_count',
+          'op': 'insert',
+          'payload': jsonEncode({
+            'product_id': _p.id,
+            'qty': newQty,
+            'sku': _p.sku,
+          }),
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Сохранено')));
+      }
+    } finally {
+      name.dispose();
+      desc.dispose();
+      cell.dispose();
+      price.dispose();
+      minQty.dispose();
+      qty.dispose();
     }
   }
 
@@ -226,71 +235,78 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final cell = TextEditingController(
         text: _cells.isNotEmpty ? (_cells.first.cell ?? '') : '');
     final note = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Приёмка товара'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: qty,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Пришло, шт *')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: buy,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Закупочная цена, ₽')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: cell,
-                  decoration: const InputDecoration(
-                      labelText: 'Положить в (место)')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: note,
-                  decoration: const InputDecoration(
-                      labelText: 'Поставщик / накладная')),
-            ],
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Приёмка товара'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: qty,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Пришло, шт *')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: buy,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Закупочная цена, ₽')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: cell,
+                    decoration: const InputDecoration(
+                        labelText: 'Положить в (место)')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: note,
+                    decoration: const InputDecoration(
+                        labelText: 'Поставщик / накладная')),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Принять')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Принять')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final q = double.tryParse(qty.text.replaceAll(',', '.')) ?? 0;
-    if (q <= 0) {
+      );
+      if (ok != true) return;
+      final q = double.tryParse(qty.text.replaceAll(',', '.')) ?? 0;
+      if (q <= 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Укажите количество')));
+        }
+        return;
+      }
+      await db.receiveGoods(
+        productId: _p.id,
+        qty: q,
+        buyPrice:
+            double.tryParse(buy.text.replaceAll(',', '.')) ?? 0,
+        cell: cell.text,
+        note: note.text.trim().isEmpty ? null : note.text.trim(),
+      );
+      await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Укажите количество')));
+            SnackBar(content: Text('Принято: ${q.toStringAsFixed(0)} шт')));
       }
-      return;
-    }
-    await db.receiveGoods(
-      productId: _p.id,
-      qty: q,
-      buyPrice:
-          double.tryParse(buy.text.replaceAll(',', '.')) ?? 0,
-      cell: cell.text,
-      note: note.text.trim().isEmpty ? null : note.text.trim(),
-    );
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Принято: ${q.toStringAsFixed(0)} шт')));
+    } finally {
+      qty.dispose();
+      buy.dispose();
+      cell.dispose();
+      note.dispose();
     }
   }
 
@@ -299,58 +315,63 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final db = context.read<AppDb>();
     final qty = TextEditingController();
     final reason = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Возврат товара'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: qty,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                      labelText: 'Вернули, шт *')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: reason,
-                  decoration: const InputDecoration(
-                      labelText: 'Причина (брак, не подошёл…)')),
-            ],
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Возврат товара'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: qty,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Вернули, шт *')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: reason,
+                    decoration: const InputDecoration(
+                        labelText: 'Причина (брак, не подошёл…)')),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Вернуть')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text('Вернуть')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final q = double.tryParse(qty.text.replaceAll(',', '.')) ?? 0;
-    if (q <= 0) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Укажите количество')));
+      );
+      if (ok != true) return;
+      final q = double.tryParse(qty.text.replaceAll(',', '.')) ?? 0;
+      if (q <= 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Укажите количество')));
+        }
+        return;
       }
-      return;
-    }
-    await db.registerReturn(
-      _p.id,
-      q,
-      price: _p.price,
-      note: reason.text.trim().isEmpty ? null : reason.text.trim(),
-    );
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Возврат принят: ${q.toStringAsFixed(0)} шт')));
+      await db.registerReturn(
+        _p.id,
+        q,
+        price: _p.price,
+        note: reason.text.trim().isEmpty ? null : reason.text.trim(),
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Возврат принят: ${q.toStringAsFixed(0)} шт')));
+      }
+    } finally {
+      qty.dispose();
+      reason.dispose();
     }
   }
 
@@ -432,24 +453,28 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (mounted) Navigator.pop(context);
   }
 
-  Future<double?> _askQty(String title) {
+  Future<double?> _askQty(String title) async {
     final ctrl = TextEditingController();
-    return showDialog<double>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Отмена')),
-          FilledButton(
-              onPressed: () => Navigator.pop(c, double.tryParse(ctrl.text)),
-              child: const Text('ОК')),
-        ],
-      ),
-    );
+    try {
+      return await showDialog<double>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              autofocus: true),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c), child: const Text('Отмена')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, double.tryParse(ctrl.text)),
+                child: const Text('ОК')),
+          ],
+        ),
+      );
+    } finally {
+      ctrl.dispose();
+    }
   }
 
   @override

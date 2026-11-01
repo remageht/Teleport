@@ -116,68 +116,75 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     final desc = TextEditingController();
     final qty = TextEditingController(text: '1');
     final price = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Новый товар'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                  controller: name,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                      labelText: 'Наименование *')),
-              const SizedBox(height: 8),
-              TextField(
-                  controller: desc,
-                  decoration: const InputDecoration(
-                      labelText: 'Описание / характеристика')),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                        controller: qty,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Кол-во')),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                        controller: price,
-                        keyboardType: TextInputType.number,
-                        decoration:
-                            const InputDecoration(labelText: 'Цена, ₽')),
-                  ),
-                ],
-              ),
-            ],
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Новый товар'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: name,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Наименование *')),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: desc,
+                    decoration: const InputDecoration(
+                        labelText: 'Описание / характеристика')),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                          controller: qty,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(labelText: 'Кол-во')),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                          controller: price,
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              const InputDecoration(labelText: 'Цена, ₽')),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Отмена')),
+            FilledButton.icon(
+                onPressed: () => Navigator.pop(c, true),
+                icon: const Icon(Icons.check),
+                label: const Text('Добавить')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text('Отмена')),
-          FilledButton.icon(
-              onPressed: () => Navigator.pop(c, true),
-              icon: const Icon(Icons.check),
-              label: const Text('Добавить')),
-        ],
-      ),
-    );
-    if (ok != true || name.text.trim().isEmpty) return;
-    await db.addProduct(
-      name: name.text.trim(),
-      description: desc.text.trim().isEmpty ? null : desc.text.trim(),
-      qty: double.tryParse(qty.text) ?? 0,
-      price: double.tryParse(price.text) ?? 0,
-    );
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Товар добавлен в базу')));
+      );
+      if (ok != true || name.text.trim().isEmpty) return;
+      await db.addProduct(
+        name: name.text.trim(),
+        description: desc.text.trim().isEmpty ? null : desc.text.trim(),
+        qty: double.tryParse(qty.text) ?? 0,
+        price: double.tryParse(price.text) ?? 0,
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Товар добавлен в базу')));
+      }
+    } finally {
+      name.dispose();
+      desc.dispose();
+      qty.dispose();
+      price.dispose();
     }
   }
 
@@ -229,94 +236,98 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
     final ids = _selected.toList();
     var mode = 0; // 0 — точная цена, 1 — наценка %
     final val = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, setD) => AlertDialog(
-          title: Text('Цена для ${ids.length} поз.'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(
-                      value: 0, label: Text('Точная цена')),
-                  ButtonSegment(
-                      value: 1, label: Text('Наценка %')),
-                ],
-                selected: {mode},
-                onSelectionChanged: (s) =>
-                    setD(() => mode = s.first),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: val,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(
-                    signed: true, decimal: true),
-                decoration: InputDecoration(
-                  labelText: mode == 0
-                      ? 'Цена, ₽ (всем одинаково)'
-                      : 'Процент, например 10 или −15',
-                  prefixIcon: const Icon(Icons.sell_outlined),
+    try {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => StatefulBuilder(
+          builder: (c, setD) => AlertDialog(
+            title: Text('Цена для ${ids.length} поз.'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(
+                        value: 0, label: Text('Точная цена')),
+                    ButtonSegment(
+                        value: 1, label: Text('Наценка %')),
+                  ],
+                  selected: {mode},
+                  onSelectionChanged: (s) =>
+                      setD(() => mode = s.first),
                 ),
-              ),
-              if (mode == 1)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    'Плюс — наценка, минус — скидка. '
-                    'Товары без цены пропускаются.',
-                    style: TextStyle(fontSize: 12),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: val,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      signed: true, decimal: true),
+                  decoration: InputDecoration(
+                    labelText: mode == 0
+                        ? 'Цена, ₽ (всем одинаково)'
+                        : 'Процент, например 10 или −15',
+                    prefixIcon: const Icon(Icons.sell_outlined),
                   ),
                 ),
+                if (mode == 1)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Плюс — наценка, минус — скидка. '
+                      'Товары без цены пропускаются.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(c, false),
+                  child: const Text('Отмена')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(c, true),
+                  child: const Text('Применить')),
             ],
           ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('Отмена')),
-            FilledButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: const Text('Применить')),
-          ],
         ),
-      ),
-    );
-    if (ok != true) return;
-    final v =
-        double.tryParse(val.text.trim().replaceAll(',', '.'));
-    if (v == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Введите число')));
-      }
-      return;
-    }
-    if (mode == 0) {
-      if (v < 0) {
+      );
+      if (ok != true) return;
+      final v =
+          double.tryParse(val.text.trim().replaceAll(',', '.'));
+      if (v == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                  content: Text('Цена не может быть отрицательной')));
+              const SnackBar(content: Text('Введите число')));
         }
         return;
       }
-      await db.setProductsPrice(ids, v);
-    } else {
-      final n = await db.applyMarkup(ids, v);
-      if (mounted && n < ids.length) {
+      if (mode == 0) {
+        if (v < 0) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text('Цена не может быть отрицательной')));
+          }
+          return;
+        }
+        await db.setProductsPrice(ids, v);
+      } else {
+        final n = await db.applyMarkup(ids, v);
+        if (mounted && n < ids.length) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(
+                  'Обновлено: $n из ${ids.length} (без цены пропущены)')));
+        }
+      }
+      setState(() => _selected.clear());
+      await _load();
+      if (mounted && mode == 0) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(
-                'Обновлено: $n из ${ids.length} (без цены пропущены)')));
+                'Готово: цена ${v.toStringAsFixed(0)} ₽ (${ids.length})')));
       }
-    }
-    setState(() => _selected.clear());
-    await _load();
-    if (mounted && mode == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Готово: цена ${v.toStringAsFixed(0)} ₽ (${ids.length})')));
+    } finally {
+      val.dispose();
     }
   }
 
