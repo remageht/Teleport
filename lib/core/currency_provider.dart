@@ -194,17 +194,19 @@ class CurrencyProvider extends ChangeNotifier {
 
   /// Пересчёт суммы из рублей в иностранную валюту.
   double convert(double rub) {
-    if (_rate <= 0) return 0.0;
+    if (!rub.isFinite || _rate <= 0 || !_rate.isFinite) return 0.0;
     return rub / _rate;
   }
 
   /// Пересчёт суммы из иностранной валюты в рубли.
   double convertToRub(double foreign) {
+    if (!foreign.isFinite || _rate <= 0 || !_rate.isFinite) return 0.0;
     return foreign * _rate;
   }
 
   /// Форматирование валютной суммы (например «$12.50» или «12.50 ₸»).
   String formatForeign(double foreign, {bool compact = false}) {
+    if (!foreign.isFinite) foreign = 0.0;
     final item = currentItem;
     final valStr = compact && foreign == foreign.roundToDouble()
         ? foreign.toStringAsFixed(0)
@@ -216,6 +218,7 @@ class CurrencyProvider extends ChangeNotifier {
 
   /// Форматирование рублей (например «1 200 ₽»).
   String formatRub(double rub) {
+    if (!rub.isFinite) rub = 0.0;
     final isRound = (rub - rub.roundToDouble()).abs() < 0.001;
     final valStr = isRound ? rub.toStringAsFixed(0) : rub.toStringAsFixed(2);
     return '${_formatThousands(valStr)} ₽';
@@ -245,6 +248,9 @@ class CurrencyProvider extends ChangeNotifier {
   /// Загрузка актуальных курсов валют с открытого API ЦБ РФ (cbr-xml-daily.ru).
   /// Возвращает статус успешности и текстовое сообщение для пользователя.
   Future<({bool success, String message})> fetchCbrRates() async {
+    if (_isFetching) {
+      return (success: false, message: 'Загрузка уже выполняется');
+    }
     _isFetching = true;
     notifyListeners();
 
@@ -303,7 +309,9 @@ class CurrencyProvider extends ChangeNotifier {
   }
 
   static String _formatThousands(String numStr) {
-    final parts = numStr.split('.');
+    final isNegative = numStr.startsWith('-');
+    final raw = isNegative ? numStr.substring(1) : numStr;
+    final parts = raw.split('.');
     final whole = parts[0];
     final b = StringBuffer();
     for (var i = 0; i < whole.length; i++) {
@@ -314,7 +322,7 @@ class CurrencyProvider extends ChangeNotifier {
       b.write('.');
       b.write(parts[1]);
     }
-    return b.toString();
+    return isNegative ? '-$b' : b.toString();
   }
 
   static String _findDefaultSymbol(String code) {

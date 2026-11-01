@@ -880,6 +880,12 @@ class AppDb {
         price: buyPrice,
         note: note,
         receiptId: receiptId);
+    if (receiptId != null) {
+      await database.rawUpdate(
+        'UPDATE receipt_docs SET total = total + ? WHERE id = ?',
+        [qty * buyPrice, receiptId],
+      );
+    }
     await touch(productId);
   }
 
@@ -1497,6 +1503,12 @@ class AppDb {
       'photo_paths': v.photoPaths.join('|'),
       'sync_state': 'pending',
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await database.insert('outbox', {
+      'entity': 'visit',
+      'op': 'upsert',
+      'payload': jsonEncode(v.toJson()),
+      'created_at': DateTime.now().toIso8601String(),
+    });
   }
 
   // ---- Магазин и данные (настройки) ----
