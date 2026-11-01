@@ -95,6 +95,7 @@ Future<void> _autoTgBackup(AppDb db) async {
     final token = p.getString('tg_bot') ?? '';
     final chat = p.getString('tg_chat') ?? '';
     if (token.isEmpty || chat.isEmpty) return;
+    await db.walCheckpoint();
     await TelegramBackup.sendDb(
         botToken: token, chatId: chat, dbPath: db.dbPath);
     await p.setInt(

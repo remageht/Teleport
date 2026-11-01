@@ -22,7 +22,8 @@ class TelegramBackup {
     final resp =
         await req.send().timeout(const Duration(seconds: 120));
     if (resp.statusCode != 200) {
-      throw 'Telegram вернул ${resp.statusCode}: проверь токен и chat_id';
+      final errBody = await resp.stream.bytesToString();
+      throw Exception('Telegram вернул ${resp.statusCode}: $errBody');
     }
   }
 }
