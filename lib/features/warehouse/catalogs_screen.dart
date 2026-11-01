@@ -26,15 +26,25 @@ class _CatalogsScreenState extends State<CatalogsScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final cats = await db.categoriesWithCounts();
-    final uncat = await db.uncategorizedCount();
-    if (mounted) {
-      setState(() {
-        _cats = cats;
-        _uncategorized = uncat;
-        _loading = false;
-      });
+    try {
+      final db = context.read<AppDb>();
+      final cats = await db.categoriesWithCounts();
+      final uncat = await db.uncategorizedCount();
+      if (mounted) {
+        setState(() {
+          _cats = cats;
+          _uncategorized = uncat;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка загрузки каталогов: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -76,8 +86,15 @@ class _CatalogsScreenState extends State<CatalogsScreen> {
         ),
       );
       if (ok != true || ctrl.text.trim().isEmpty) return;
-      await db.addCategory(ctrl.text.trim());
-      await _load();
+      try {
+        await db.addCategory(ctrl.text.trim());
+        await _load();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Ошибка добавления каталога: $e')));
+        }
+      }
     } finally {
       ctrl.dispose();
     }
@@ -109,11 +126,18 @@ class _CatalogsScreenState extends State<CatalogsScreen> {
         ),
       );
       if (ok != true || ctrl.text.trim().isEmpty) return;
-      await db.renameCategory(c.id, ctrl.text.trim());
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Каталог переименован')));
+      try {
+        await db.renameCategory(c.id, ctrl.text.trim());
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Каталог переименован')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Ошибка переименования: $e')));
+        }
       }
     } finally {
       ctrl.dispose();
@@ -143,11 +167,18 @@ class _CatalogsScreenState extends State<CatalogsScreen> {
       ),
     );
     if (ok != true) return;
-    await db.deleteCategory(c.id);
-    await _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Каталог удалён')));
+    try {
+      await db.deleteCategory(c.id);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Каталог удалён')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка удаления каталога: $e')));
+      }
     }
   }
 

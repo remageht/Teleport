@@ -35,19 +35,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final cells = await db.stockCells(_p.id);
-    final fresh = await db.findByBarcode(_p.sku);
-    final cats =
-        await db.categories();
-    if (mounted) {
-      setState(() {
-        _cells = cells;
-        if (fresh != null) _p = fresh;
-        _cats = cats
-            .map((r) => (id: r['id'] as String, name: r['name'] as String))
-            .toList();
-      });
+    try {
+      final db = context.read<AppDb>();
+      final cells = await db.stockCells(_p.id);
+      final fresh = await db.findByBarcode(_p.sku);
+      final cats = await db.categories();
+      if (mounted) {
+        setState(() {
+          _cells = cells;
+          if (fresh != null) _p = fresh;
+          _cats = cats
+              .map((r) => (id: r['id'] as String, name: r['name'] as String))
+              .toList();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка обновления данных товара: $e')));
+      }
     }
   }
 

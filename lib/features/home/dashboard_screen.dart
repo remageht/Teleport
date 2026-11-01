@@ -26,6 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<({String name, int qty})> _byCat = [];
   int _positions = 0, _stockValue = 0;
   bool _loaded = false;
+  String? _error;
 
   @override
   void initState() {
@@ -34,31 +35,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final session = context.read<Session>();
-    final now = DateTime.now();
-    final orders = await db.ordersOfDay(now, session.userId ?? '');
-    final sales = await db.daySales(now, session.userId ?? '');
-    final popular = await db.popularProducts(limit: 5);
-    final low = await db.lowStock(limit: 8);
-    final week = await db.salesByDay(days: 7);
-    final byCat = await db.salesByCategory();
-    final st = await db.database.rawQuery('''
-      SELECT COUNT(DISTINCT product_id) AS cnt, SUM(qty) AS total
-      FROM stocks WHERE qty > 0 AND warehouse_id = 'wh-shop'
-    ''');
-    if (!mounted) return;
-    setState(() {
-      _orders = orders;
-      _sales = sales;
-      _popular = popular;
-      _low = low;
-      _week = week;
-      _byCat = byCat;
-      _positions = orders.fold(0, (s, o) => s + o.lines.length);
-      _stockValue = ((st.first['total'] as num?)?.toDouble() ?? 0).toInt();
-      _loaded = true;
-    });
+    try {
+      final db = context.read<AppDb>();
+      final session = context.read<Session>();
+      final now = DateTime.now();
+      final orders = await db.ordersOfDay(now, session.userId ?? '');
+      final sales = await db.daySales(now, session.userId ?? '');
+      final popular = await db.popularProducts(limit: 5);
+      final low = await db.lowStock(limit: 8);
+      final week = await db.salesByDay(days: 7);
+      final byCat = await db.salesByCategory();
+      final st = await db.database.rawQuery('''
+        SELECT COUNT(DISTINCT product_id) AS cnt, SUM(qty) AS total
+        FROM stocks WHERE qty > 0 AND warehouse_id = 'wh-shop'
+      ''');
+      if (!mounted) return;
+      setState(() {
+        _orders = orders;
+        _sales = sales;
+        _popular = popular;
+        _low = low;
+        _week = week;
+        _byCat = byCat;
+        _positions = orders.fold(0, (s, o) => s + o.lines.length);
+        _stockValue = ((st.first['total'] as num?)?.toDouble() ?? 0).toInt();
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loaded = true);
+      }
+    }
   }
 
   String _dayLabel(String iso) {
@@ -71,6 +83,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     if (!_loaded) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null && _orders.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.orange),
+              const SizedBox(height: 12),
+              Text('Не удалось загрузить данные:\n$_error',
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () {
+                  setState(() => _loaded = false);
+                  _load();
+                },
+                child: const Text('Повторить'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     final avgTicket = _orders.isEmpty ? 0.0 : _sales / _orders.length;
     final maxWeek = _week.fold<double>(

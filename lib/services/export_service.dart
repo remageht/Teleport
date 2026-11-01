@@ -118,20 +118,26 @@ class ExportService {
     final bytes = excel.encode();
     if (bytes == null) return 'Не удалось сформировать файл';
 
-    final dir = await getApplicationDocumentsDirectory();
-    final now = DateTime.now();
-    final stamp =
-        '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
-    final file =
-        File(p.join(dir.path, 'prodazhi_$stamp${allTime ? '_vse' : ''}.xlsx'));
-    await file.writeAsBytes(bytes);
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final now = DateTime.now();
+      final stamp =
+          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+      final file =
+          File(p.join(dir.path, 'prodazhi_$stamp${allTime ? '_vse' : ''}.xlsx'));
+      await file.writeAsBytes(bytes);
 
-    // Телефон: сразу предложить отправить (WhatsApp/Telegram/почта).
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      await Share.shareXFiles([XFile(file.path)],
-          text: 'Продажи ТЕЛЕМАСТЕР');
+      // Телефон: сразу предложить отправить (WhatsApp/Telegram/почта).
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        await Share.shareXFiles([XFile(file.path)],
+            text: 'Продажи ТЕЛЕМАСТЕР');
+      }
+      return 'Файл: ${file.path}';
+    } on FileSystemException catch (e) {
+      return 'Ошибка сохранения файла (возможно, открыт в другой программе): ${e.message}';
+    } catch (e) {
+      return 'Ошибка экспорта: $e';
     }
-    return 'Файл: ${file.path}';
   }
 
   String _payName(String v) => switch (v) {
@@ -289,12 +295,19 @@ class ExportService {
 
   /// Сохранить байты в Документы, на телефоне — открыть «Поделиться».
   Future<String> _saveAndShare(
-      List<int> bytes, String fileName, String shareText) async {    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, fileName));
-    await file.writeAsBytes(bytes);
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      await Share.shareXFiles([XFile(file.path)], text: shareText);
+      List<int> bytes, String fileName, String shareText) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(p.join(dir.path, fileName));
+      await file.writeAsBytes(bytes);
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        await Share.shareXFiles([XFile(file.path)], text: shareText);
+      }
+      return 'Файл: ${file.path}';
+    } on FileSystemException catch (e) {
+      return 'Ошибка сохранения файла (возможно, открыт в другой программе): ${e.message}';
+    } catch (e) {
+      return 'Ошибка сохранения: $e';
     }
-    return 'Файл: ${file.path}';
   }
 }

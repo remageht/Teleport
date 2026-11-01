@@ -25,17 +25,28 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final docs = await db.receipts();
-    final stats = await db.receiptsStats();
-    if (mounted) {
-      setState(() {
-        _docs = docs;
-        _stats
-          ..clear()
-          ..addAll(stats);
-        _loading = false;
-      });
+    try {
+      final db = context.read<AppDb>();
+      final docs = await db.receipts();
+      final stats = await db.receiptsStats();
+      if (mounted) {
+        setState(() {
+          _docs = docs;
+          _stats
+            ..clear()
+            ..addAll(stats);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки накладных: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 

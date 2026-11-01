@@ -30,47 +30,74 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final users = await db.database.query('users');
-    final warehouses = await db.database.query('warehouses');
-    if (!mounted) return;
-    setState(() {
-      _users = users;
-      if (warehouses.isNotEmpty) {
-        // Склад по умолчанию для van-selling — «мобильный склад».
-        final van = warehouses.firstWhere(
-          (w) => (w['id'] as String).contains('van'),
-          orElse: () => warehouses.first,
-        );
-        _vanWarehouse = van['id'] as String;
+    try {
+      final db = context.read<AppDb>();
+      final users = await db.database.query('users');
+      final warehouses = await db.database.query('warehouses');
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+        if (warehouses.isNotEmpty) {
+          // Склад по умолчанию для van-selling — «мобильный склад».
+          final van = warehouses.firstWhere(
+            (w) => (w['id'] as String).contains('van'),
+            orElse: () => warehouses.first,
+          );
+          _vanWarehouse = van['id'] as String;
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка загрузки пользователей: $e')));
       }
-    });
+    }
   }
 
   String? _vanWarehouse;
 
   void _login() async {
-    final user = _users.firstWhere((u) => u['id'] == _selected);
+    if (_selected == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Выберите пользователя')));
+      return;
+    }
+    final user = _users.cast<Map<String, Object?>?>().firstWhere(
+          (u) => u?['id'] == _selected,
+          orElse: () => null,
+        );
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Пользователь не найден')));
+      return;
+    }
     if ((user['pin'] as String?) != _pinCtrl.text.trim()) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Неверный PIN')));
       return;
     }
-    final db = context.read<AppDb>();
-    final orgs = await db.database.query('organizations', limit: 1);
-    if (!mounted) return;
-    context.read<Session>().login(
-          userId: user['id'] as String,
-          userName: user['name'] as String,
-          role: Role.values.firstWhere(
-              (r) => r.name == (user['role'] as String?),
-              orElse: () => Role.agent),
-          mode: _mode,
-          warehouseId: _mode == WorkMode.vanSelling
-              ? (_vanWarehouse ?? 'wh-van')
-              : 'wh-main',
-          organizationId: orgs.isNotEmpty ? orgs.first['id'] as String : null,
-        );
+    try {
+      final db = context.read<AppDb>();
+      final orgs = await db.database.query('organizations', limit: 1);
+      if (!mounted) return;
+      context.read<Session>().login(
+            userId: user['id'] as String,
+            userName: user['name'] as String,
+            role: Role.values.firstWhere(
+                (r) => r.name == (user['role'] as String?),
+                orElse: () => Role.agent),
+            mode: _mode,
+            warehouseId: _mode == WorkMode.vanSelling
+                ? (_vanWarehouse ?? 'wh-van')
+                : 'wh-main',
+            organizationId: orgs.isNotEmpty ? orgs.first['id'] as String : null,
+          );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка входа: $e')));
+      }
+    }
   }
 
   @override

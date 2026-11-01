@@ -67,19 +67,29 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final items = await context.read<AppDb>().searchProducts(
-          _search.text,
-          sort: _sort,
-          onlyAvailable: _onlyAvailable,
-          onlySold: _onlySold,
-          onlyLow: _onlyLow,
-          categoryId: _catId,
-        );
-    if (mounted) {
-      setState(() {
-        _items = items;
-        _loading = false;
-      });
+    try {
+      final items = await context.read<AppDb>().searchProducts(
+            _search.text,
+            sort: _sort,
+            onlyAvailable: _onlyAvailable,
+            onlySold: _onlySold,
+            onlyLow: _onlyLow,
+            categoryId: _catId,
+          );
+      if (mounted) {
+        setState(() {
+          _items = items;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка загрузки товаров: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 

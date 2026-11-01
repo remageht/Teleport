@@ -45,23 +45,34 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final session = context.read<Session>();
-    final now = DateTime.now();
-    final cats = await db.categories();
-    final hits = await db.popularProducts(limit: 8);
-    final sales = await db.daySales(now, session.userId ?? '');
-    final orders = await db.ordersOfDay(now, session.userId ?? '');
-    if (!mounted) return;
-    setState(() {
-      _cats = cats
-          .map((r) => (id: r['id'] as String, name: r['name'] as String))
-          .toList();
-      _hits = hits;
-      _sales = sales;
-      _ordersCount = orders.length;
-      _loaded = true;
-    });
+    try {
+      final db = context.read<AppDb>();
+      final session = context.read<Session>();
+      final now = DateTime.now();
+      final cats = await db.categories();
+      final hits = await db.popularProducts(limit: 8);
+      final sales = await db.daySales(now, session.userId ?? '');
+      final orders = await db.ordersOfDay(now, session.userId ?? '');
+      if (!mounted) return;
+      setState(() {
+        _cats = cats
+            .map((r) => (id: r['id'] as String, name: r['name'] as String))
+            .toList();
+        _hits = hits;
+        _sales = sales;
+        _ordersCount = orders.length;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки данных: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loaded = true);
+      }
+    }
   }
 
   void _openWarehouse({String? categoryId, String? query, String? title}) {

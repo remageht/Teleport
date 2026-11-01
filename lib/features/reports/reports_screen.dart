@@ -147,40 +147,48 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   Future<void> _export(bool allTime) async {
     setState(() => _exportMsg = 'Формирую файл…');
-    final msg = await ExportService()
-        .exportSales(context.read<AppDb>(), allTime: allTime);
-    if (mounted) setState(() => _exportMsg = msg);
+    try {
+      final msg = await ExportService()
+          .exportSales(context.read<AppDb>(), allTime: allTime);
+      if (mounted) setState(() => _exportMsg = msg);
+    } catch (e) {
+      if (mounted) setState(() => _exportMsg = 'Ошибка экспорта: $e');
+    }
   }
 
   /// Прайс для покупателей: выбор прайса, затем Excel по каталогам.
   Future<void> _buyerPrice() async {
-    final db = context.read<AppDb>();
-    final lists = await db.priceLists();
-    if (!mounted) return;
-    final pick = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Прайс для покупателей'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final l in lists)
-              ListTile(
-                dense: true,
-                title: Text('${l['name']}'),
-                subtitle: Text(
-                    'Скидка: ${((l['discount_pct'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)}%'),
-                onTap: () => Navigator.pop(c, l['id'] as String),
-              ),
-          ],
+    try {
+      final db = context.read<AppDb>();
+      final lists = await db.priceLists();
+      if (!mounted) return;
+      final pick = await showDialog<String>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Прайс для покупателей'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final l in lists)
+                ListTile(
+                  dense: true,
+                  title: Text('${l['name']}'),
+                  subtitle: Text(
+                      'Скидка: ${((l['discount_pct'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)}%'),
+                  onTap: () => Navigator.pop(c, l['id'] as String),
+                ),
+            ],
+          ),
         ),
-      ),
-    );
-    if (pick == null) return;
-    setState(() => _exportMsg = 'Формирую прайс…');
-    final msg =
-        await ExportService().exportBuyerPrice(db, priceListId: pick);
-    if (mounted) setState(() => _exportMsg = msg);
+      );
+      if (pick == null) return;
+      setState(() => _exportMsg = 'Формирую прайс…');
+      final msg =
+          await ExportService().exportBuyerPrice(db, priceListId: pick);
+      if (mounted) setState(() => _exportMsg = msg);
+    } catch (e) {
+      if (mounted) setState(() => _exportMsg = 'Ошибка формирования прайса: $e');
+    }
   }
 
   Widget _reportTile(String title, String value, IconData icon) => Card(
