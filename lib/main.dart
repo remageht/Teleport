@@ -120,7 +120,7 @@ class RadioTradeApp extends StatelessWidget {
         return MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(textScaler: TextScaler.linear(t.textScale)),
-          child: child!,
+          child: child ?? const SizedBox.shrink(),
         );
       },
       locale: const Locale('ru', 'RU'),
