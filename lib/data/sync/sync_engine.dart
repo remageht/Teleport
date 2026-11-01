@@ -149,16 +149,29 @@ class SyncEngine {
   Future<void> _applyProducts(List items) async {
     final b = db.database.batch();
     for (final it in items.cast<Map<String, dynamic>>()) {
-      b.insert(
-        'products',
-        {
-          'id': it['id'], 'sku': it['sku'] ?? '', 'name': it['name'] ?? '',
-          'nominal': it['nominal'], 'case_type': it['case_type'],
-          'manufacturer': it['manufacturer'], 'barcode': it['barcode'],
-          'unit': it['unit'] ?? 'шт', 'sync_state': 'synced',
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      b.rawInsert('''
+        INSERT INTO products (
+          id, sku, name, nominal, case_type, manufacturer, barcode, unit, sync_state
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synced')
+        ON CONFLICT(id) DO UPDATE SET
+          sku = excluded.sku,
+          name = excluded.name,
+          nominal = excluded.nominal,
+          case_type = excluded.case_type,
+          manufacturer = excluded.manufacturer,
+          barcode = COALESCE(excluded.barcode, products.barcode),
+          unit = excluded.unit,
+          sync_state = 'synced'
+      ''', [
+        it['id'],
+        it['sku'] ?? '',
+        it['name'] ?? '',
+        it['nominal'],
+        it['case_type'],
+        it['manufacturer'],
+        it['barcode'],
+        it['unit'] ?? 'шт',
+      ]);
     }
     await b.commit(noResult: true);
   }
@@ -166,17 +179,23 @@ class SyncEngine {
   Future<void> _applyClients(List items) async {
     final b = db.database.batch();
     for (final it in items.cast<Map<String, dynamic>>()) {
-      b.insert(
-        'clients',
-        {
-          'id': it['id'], 'name': it['name'] ?? '',
-          'debt': (it['debt'] as num?)?.toDouble() ?? 0,
-          'price_list_id': it['price_list_id'],
-          'discount_pct': (it['discount_pct'] as num?)?.toDouble() ?? 0,
-          'sync_state': 'synced',
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      b.rawInsert('''
+        INSERT INTO clients (
+          id, name, debt, price_list_id, discount_pct, sync_state
+        ) VALUES (?, ?, ?, ?, ?, 'synced')
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          debt = excluded.debt,
+          price_list_id = excluded.price_list_id,
+          discount_pct = excluded.discount_pct,
+          sync_state = 'synced'
+      ''', [
+        it['id'],
+        it['name'] ?? '',
+        (it['debt'] as num?)?.toDouble() ?? 0,
+        it['price_list_id'],
+        (it['discount_pct'] as num?)?.toDouble() ?? 0,
+      ]);
     }
     await b.commit(noResult: true);
   }
