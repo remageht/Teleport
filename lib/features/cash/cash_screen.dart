@@ -125,8 +125,9 @@ class _CashScreenState extends State<CashScreen> {
         builder: (c) => StatefulBuilder(
           builder: (c, setD) => AlertDialog(
             title: const Text('Внесение / выплата'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
               children: [
                 SegmentedButton<String>(
                   segments: const [
@@ -170,7 +171,8 @@ class _CashScreenState extends State<CashScreen> {
                 ),
               ],
             ),
-            actions: [
+          ),
+          actions: [
               TextButton(
                   onPressed: () => Navigator.pop(c, false),
                   child: const Text('Отмена')),
@@ -223,23 +225,25 @@ class _CashScreenState extends State<CashScreen> {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Вечерняя сверка'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                  'Должно быть: ${_expected.toStringAsFixed(2)} ₽'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(
-                        decimal: true),
-                decoration: const InputDecoration(
-                    labelText: 'Посчитано фактически, ₽'),
-              ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    'Должно быть: ${_expected.toStringAsFixed(2)} ₽'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(
+                          decimal: true),
+                  decoration: const InputDecoration(
+                      labelText: 'Посчитано фактически, ₽'),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

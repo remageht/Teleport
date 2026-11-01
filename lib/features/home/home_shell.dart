@@ -23,11 +23,13 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
+  SyncEngine? _syncEngine;
 
   @override
   void initState() {
     super.initState();
-    context.read<SyncEngine>().start();
+    _syncEngine = context.read<SyncEngine>();
+    _syncEngine?.start();
     // Запуск через ярлык с рабочего стола (Новая продажа / Склад).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final a = pendingShortcut;
@@ -47,7 +49,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
-    context.read<SyncEngine>().stop();
+    _syncEngine?.stop();
     super.dispose();
   }
 
@@ -112,6 +114,9 @@ class _HomeShellState extends State<HomeShell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
+        labelBehavior: MediaQuery.sizeOf(context).width < 380
+            ? NavigationDestinationLabelBehavior.onlyShowSelected
+            : NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(

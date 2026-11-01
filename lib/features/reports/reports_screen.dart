@@ -166,18 +166,20 @@ class _ReportsScreenState extends State<ReportsScreen> {
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Прайс для покупателей'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final l in lists)
-                ListTile(
-                  dense: true,
-                  title: Text('${l['name']}'),
-                  subtitle: Text(
-                      'Скидка: ${((l['discount_pct'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)}%'),
-                  onTap: () => Navigator.pop(c, l['id'] as String),
-                ),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final l in lists)
+                  ListTile(
+                    dense: true,
+                    title: Text('${l['name']}'),
+                    subtitle: Text(
+                        'Скидка: ${((l['discount_pct'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)}%'),
+                    onTap: () => Navigator.pop(c, l['id'] as String),
+                  ),
+              ],
+            ),
           ),
         ),
       );

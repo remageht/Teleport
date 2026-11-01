@@ -57,11 +57,14 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
       builder: (c) => AlertDialog(
         title: Text('Найдено: ${items.length}'),
         content: SizedBox(
-          width: 400,
-          height: 380,
-          child: items.isEmpty
-              ? const Center(child: Text('Ничего не найдено'))
-              : ListView.builder(
+          width: double.maxFinite,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+            ),
+            child: items.isEmpty
+                ? const Center(child: Text('Ничего не найдено'))
+                : ListView.builder(
                   itemCount: items.length,
                   itemBuilder: (_, i) {
                     final p = items[i];
@@ -87,9 +90,10 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
                     );
                   },
                 ),
+            ),
+          ),
         ),
-      ),
-    );
+      );
     if (picked != null) await _addProduct(picked);
   }
 
@@ -130,17 +134,19 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
         context: context,
         builder: (c) => AlertDialog(
           title: Text(p.name, maxLines: 3),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Цена: ${price.toStringAsFixed(2)} ₽ / ${p.unit} · на складе: ${avail.toStringAsFixed(0)}'),
-              TextField(
-                  controller: ctrl,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Количество')),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Цена: ${price.toStringAsFixed(2)} ₽ / ${p.unit} · на складе: ${avail.toStringAsFixed(0)}'),
+                TextField(
+                    controller: ctrl,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: 'Количество')),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c), child: const Text('Отмена')),
@@ -274,22 +280,50 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
               padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
-                  SegmentedButton<PayType>(
-                    segments: const [
-                      ButtonSegment(value: PayType.cash, label: Text('Наличные')),
-                      ButtonSegment(value: PayType.card, label: Text('Карта')),
-                      ButtonSegment(value: PayType.transfer, label: Text('Перевод')),
-                      ButtonSegment(value: PayType.deferred, label: Text('Долг')),
-                    ],
-                    selected: {_payType},
-                    onSelectionChanged: (s) => setState(() => _payType = s.first),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 360;
+                      return SegmentedButton<PayType>(
+                        showSelectedIcon: !isCompact,
+                        segments: [
+                          ButtonSegment(
+                            value: PayType.cash,
+                            icon: isCompact ? const Icon(Icons.payments_outlined, size: 18) : null,
+                            label: Text(isCompact ? 'Нал' : 'Наличные'),
+                          ),
+                          ButtonSegment(
+                            value: PayType.card,
+                            icon: isCompact ? const Icon(Icons.credit_card, size: 18) : null,
+                            label: const Text('Карта'),
+                          ),
+                          ButtonSegment(
+                            value: PayType.transfer,
+                            icon: isCompact ? const Icon(Icons.send_to_mobile, size: 18) : null,
+                            label: Text(isCompact ? 'СБП' : 'Перевод'),
+                          ),
+                          ButtonSegment(
+                            value: PayType.deferred,
+                            icon: isCompact ? const Icon(Icons.pending_actions, size: 18) : null,
+                            label: const Text('Долг'),
+                          ),
+                        ],
+                        selected: {_payType},
+                        onSelectionChanged: (s) => setState(() => _payType = s.first),
+                      );
+                    },
                   ),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Text('Итого: ${currency.format(_total)}',
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const Spacer(),
+                      Expanded(
+                        child: Text(
+                          'Итого: ${currency.format(_total)}',
+                          style: Theme.of(context).textTheme.titleLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       FilledButton.icon(
                         onPressed: (_lines.isEmpty || _saving) ? null : _save,
                         icon: _saving

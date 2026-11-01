@@ -252,43 +252,45 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
         builder: (c) => StatefulBuilder(
           builder: (c, setD) => AlertDialog(
             title: Text('Цена для ${ids.length} поз.'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(
-                        value: 0, label: Text('Точная цена')),
-                    ButtonSegment(
-                        value: 1, label: Text('Наценка %')),
-                  ],
-                  selected: {mode},
-                  onSelectionChanged: (s) =>
-                      setD(() => mode = s.first),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: val,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      signed: true, decimal: true),
-                  decoration: InputDecoration(
-                    labelText: mode == 0
-                        ? 'Цена, ₽ (всем одинаково)'
-                        : 'Процент, например 10 или −15',
-                    prefixIcon: const Icon(Icons.sell_outlined),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(
+                          value: 0, label: Text('Точная цена')),
+                      ButtonSegment(
+                          value: 1, label: Text('Наценка %')),
+                    ],
+                    selected: {mode},
+                    onSelectionChanged: (s) =>
+                        setD(() => mode = s.first),
                   ),
-                ),
-                if (mode == 1)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Плюс — наценка, минус — скидка. '
-                      'Товары без цены пропускаются.',
-                      style: TextStyle(fontSize: 12),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: val,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        signed: true, decimal: true),
+                    decoration: InputDecoration(
+                      labelText: mode == 0
+                          ? 'Цена, ₽ (всем одинаково)'
+                          : 'Процент, например 10 или −15',
+                      prefixIcon: const Icon(Icons.sell_outlined),
                     ),
                   ),
-              ],
+                  if (mode == 1)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Плюс — наценка, минус — скидка. '
+                        'Товары без цены пропускаются.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                ],
+              ),
             ),
             actions: [
               TextButton(
