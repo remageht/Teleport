@@ -37,16 +37,14 @@ class InvoicePhotoOcr {
     String pathToScan = imagePath;
     File? tempFile;
 
-    // 1. Нормализация ориентации по EXIF и подготовка файла
+    // 1. Нормализация ориентации по EXIF и подготовка файла (в изоляте)
     try {
       final bytes = await file.readAsBytes();
-      final decoded = img_lib.decodeImage(bytes);
-      if (decoded != null) {
-        final oriented = img_lib.bakeOrientation(decoded);
+      final bakedBytes = await compute(_bakeExifOrientationWorker, bytes);
+      if (bakedBytes != null) {
         final tmpDir = await getTemporaryDirectory();
         final tmpPath =
             '${tmpDir.path}/ocr_baked_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final bakedBytes = img_lib.encodeJpg(oriented, quality: 92);
         tempFile = File(tmpPath);
         await tempFile.writeAsBytes(bakedBytes);
         pathToScan = tmpPath;
@@ -61,18 +59,18 @@ class InvoicePhotoOcr {
       var res = await _processImage(pathToScan);
 
       // 3. Если строк не нашлось или их мало (например, документ снят в альбомной
-      // ориентации под 90° как на Image 2), пробуем поворот на 90° и 270°.
+      // ориентации под 90°), пробуем поворот на 90° и 270° через изолят.
       if (res.lines.isEmpty && tempFile != null) {
         try {
           final bytes = await tempFile.readAsBytes();
-          final img = img_lib.decodeImage(bytes);
-          if (img != null) {
-            // Поворот 90° CW
-            final rot90 = img_lib.copyRotate(img, angle: 90);
+          // Поворот 90° CW
+          final rot90Bytes = await compute(
+              _rotateImageWorker, (bytes: bytes, angle: 90));
+          if (rot90Bytes != null) {
             final rot90Path =
                 '${tempFile.parent.path}/ocr_rot90_${DateTime.now().millisecondsSinceEpoch}.jpg';
             final rot90File = File(rot90Path);
-            await rot90File.writeAsBytes(img_lib.encodeJpg(rot90, quality: 90));
+            await rot90File.writeAsBytes(rot90Bytes);
             final rot90Res = await _processImage(rot90Path);
             try {
               await rot90File.delete();
@@ -84,19 +82,21 @@ class InvoicePhotoOcr {
 
             // Если всё ещё пусто, пробуем 270° CW
             if (res.lines.isEmpty) {
-              final rot270 = img_lib.copyRotate(img, angle: 270);
-              final rot270Path =
-                  '${tempFile.parent.path}/ocr_rot270_${DateTime.now().millisecondsSinceEpoch}.jpg';
-              final rot270File = File(rot270Path);
-              await rot270File
-                  .writeAsBytes(img_lib.encodeJpg(rot270, quality: 90));
-              final rot270Res = await _processImage(rot270Path);
-              try {
-                await rot270File.delete();
-              } catch (_) {}
+              final rot270Bytes = await compute(
+                  _rotateImageWorker, (bytes: bytes, angle: 270));
+              if (rot270Bytes != null) {
+                final rot270Path =
+                    '${tempFile.parent.path}/ocr_rot270_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                final rot270File = File(rot270Path);
+                await rot270File.writeAsBytes(rot270Bytes);
+                final rot270Res = await _processImage(rot270Path);
+                try {
+                  await rot270File.delete();
+                } catch (_) {}
 
-              if (rot270Res.lines.length > res.lines.length) {
-                res = rot270Res;
+                if (rot270Res.lines.length > res.lines.length) {
+                  res = rot270Res;
+                }
               }
             }
           }
@@ -464,4 +464,20 @@ class InvoicePhotoOcr {
 
     return (number: number, supplier: supplier);
   }
+}
+
+/// Фоновый воркер изолята: декодирование, применение EXIF-поворота и перекодирование.
+Uint8List? _bakeExifOrientationWorker(Uint8List bytes) {
+  final decoded = img_lib.decodeImage(bytes);
+  if (decoded == null) return null;
+  final oriented = img_lib.bakeOrientation(decoded);
+  return img_lib.encodeJpg(oriented, quality: 92);
+}
+
+/// Фоновый воркер изолята: поворот изображения на заданный угол.
+Uint8List? _rotateImageWorker(({Uint8List bytes, num angle}) args) {
+  final img = img_lib.decodeImage(args.bytes);
+  if (img == null) return null;
+  final rotated = img_lib.copyRotate(img, angle: args.angle);
+  return img_lib.encodeJpg(rotated, quality: 90);
 }

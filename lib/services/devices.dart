@@ -25,7 +25,8 @@ class ReceiptPrinter {
 
   Future<void> printReceipt(Order order, {bool invoice = false}) async {
     final bytes = _build(order, invoice: invoice);
-    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    if (kIsWeb) return;
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       final f = File('receipt_${order.number}.txt');
       await f.writeAsString(_plainText(order, invoice: invoice));
       return;
@@ -38,8 +39,8 @@ class ReceiptPrinter {
   Future<String> printLabels(
       List<({String name, double price, String? barcode})> labels) async {
     if (labels.isEmpty) return 'Нечего печатать';
-    if (kIsWeb ||
-        Platform.isWindows ||
+    if (kIsWeb) return 'Печать в Web-версии не поддерживается';
+    if (Platform.isWindows ||
         Platform.isLinux ||
         Platform.isMacOS) {
       final b = StringBuffer();

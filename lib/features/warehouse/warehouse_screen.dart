@@ -415,7 +415,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       if (photo == null || photo.isEmpty) continue;
       try {
         final f = File(photo);
-        if (f.existsSync()) f.deleteSync();
+        if (await f.exists()) await f.delete();
       } catch (_) {}
     }
     await db.deleteProducts(ids);
