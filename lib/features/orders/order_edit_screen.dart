@@ -196,7 +196,9 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
       if (_type == OrderType.realization) {
         for (final l in _lines) {
           await db.registerSale(l.productId, l.qty,
-              price: l.price, note: order.number);
+              price: l.price,
+              note: order.number,
+              warehouseId: _warehouseId);
         }
       }
       if (!mounted) return;
