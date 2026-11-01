@@ -585,6 +585,21 @@ class AppDb {
         whereArgs: [id]);
   }
 
+  /// Пометить товары изменёнными пачкой (для победы «кто свежее» при обмене).
+  Future<void> touchProducts(List<String> ids, {DatabaseExecutor? executor}) async {
+    if (ids.isEmpty) return;
+    final db = executor ?? database;
+    final now = DateTime.now().toIso8601String();
+    for (var i = 0; i < ids.length; i += 500) {
+      final chunk = ids.sublist(i, (i + 500 > ids.length) ? ids.length : i + 500);
+      final ph = List.filled(chunk.length, '?').join(',');
+      await db.rawUpdate(
+        'UPDATE products SET updated_at = ? WHERE id IN ($ph)',
+        [now, ...chunk],
+      );
+    }
+  }
+
   // ---- Каталоги (категории товаров) ----
 
   /// Стандартные каталоги + автосортировка всех товаров по названиям.
@@ -970,6 +985,26 @@ class AppDb {
     ''', [receiptId]);
   }
 
+  /// Сводка по всем поступлениям: количество строк и сумма без N+1 запросов.
+  Future<Map<String, ({int lines, double total})>> receiptsStats() async {
+    final rows = await database.rawQuery('''
+      SELECT receipt_id, COUNT(*) AS lines_count, SUM(qty * price) AS total_amount
+      FROM moves
+      WHERE receipt_id IS NOT NULL
+      GROUP BY receipt_id
+    ''');
+    final map = <String, ({int lines, double total})>{};
+    for (final r in rows) {
+      final rid = r['receipt_id'] as String?;
+      if (rid == null) continue;
+      map[rid] = (
+        lines: (r['lines_count'] as num?)?.toInt() ?? 0,
+        total: (r['total_amount'] as num?)?.toDouble() ?? 0.0,
+      );
+    }
+    return map;
+  }
+
   Future<void> setReceiptPhoto(String id, String path) async {
     await database.update('receipt_docs', {'photo_path': path},
         where: 'id = ?', whereArgs: [id]);
@@ -993,6 +1028,30 @@ class AppDb {
       WHERE p.id = ? LIMIT 1
     ''', [id]);
     return rows.isEmpty ? null : Product.fromRow(rows.first);
+  }
+
+  /// Батч-запрос товаров по списку id (с ценой и остатком) без N+1 запросов.
+  Future<Map<String, Product>> productsByIds(List<String> ids) async {
+    if (ids.isEmpty) return {};
+    final map = <String, Product>{};
+    for (var i = 0; i < ids.length; i += 500) {
+      final chunk =
+          ids.sublist(i, (i + 500 > ids.length) ? ids.length : i + 500);
+      final ph = List.filled(chunk.length, '?').join(',');
+      final rows = await database.rawQuery('''
+        SELECT p.*, IFNULL(pi.price,0) AS price,
+               IFNULL((SELECT SUM(qty-reserved) FROM stocks WHERE product_id = p.id),0) AS available,
+               IFNULL((SELECT s2.cell FROM stocks s2 WHERE s2.product_id = p.id AND s2.qty > 0 ORDER BY s2.cell LIMIT 1), '') AS cell
+        FROM products p
+        LEFT JOIN price_items pi ON pi.product_id = p.id AND pi.price_list_id = 'pl-base'
+        WHERE p.id IN ($ph)
+      ''', chunk);
+      for (final r in rows) {
+        final p = Product.fromRow(r);
+        map[p.id] = p;
+      }
+    }
+    return map;
   }
 
   /// Подбор позиции из базы под строку накладной:
@@ -1069,11 +1128,59 @@ class AppDb {
     return 'TP${DateTime.now().microsecondsSinceEpoch % 100000000}';
   }
 
+  /// Сгенерировать пачку уникальных внутренних кодов вида TP123456 без N+1 запросов.
+  Future<List<String>> generateBarcodes(int count) async {
+    if (count <= 0) return const [];
+    final existingRows = await database.rawQuery(
+        "SELECT barcode FROM products WHERE barcode LIKE 'TP%'");
+    final existingCodes = existingRows
+        .map((r) => r['barcode'] as String?)
+        .whereType<String>()
+        .toSet();
+    final results = <String>[];
+    var base = DateTime.now().millisecondsSinceEpoch;
+    var attempt = 0;
+    while (results.length < count && attempt < count * 20) {
+      final code =
+          'TP${((base + attempt) % 1000000).toString().padLeft(6, '0')}';
+      if (!existingCodes.contains(code)) {
+        existingCodes.add(code);
+        results.add(code);
+      }
+      attempt++;
+    }
+    while (results.length < count) {
+      final code =
+          'TP${(DateTime.now().microsecondsSinceEpoch + results.length) % 100000000}';
+      if (!existingCodes.contains(code)) {
+        existingCodes.add(code);
+        results.add(code);
+      }
+    }
+    return results;
+  }
+
   Future<void> setBarcode(String id, String code) async {
     await database.update(
         'products', {'barcode': code.trim()},
         where: 'id = ?', whereArgs: [id]);
     await touch(id);
+  }
+
+  /// Массово назначить штрихкоды пачкой в одном batch.
+  Future<void> setBarcodes(Map<String, String> barcodesByProductId) async {
+    if (barcodesByProductId.isEmpty) return;
+    final b = database.batch();
+    final now = DateTime.now().toIso8601String();
+    for (final e in barcodesByProductId.entries) {
+      b.update(
+        'products',
+        {'barcode': e.value.trim(), 'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [e.key],
+      );
+    }
+    await b.commit(noResult: true);
   }
 
   /// Удалить каталог; его товары остаются, просто становятся без каталога.
@@ -1132,9 +1239,7 @@ class AppDb {
           conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await b.commit(noResult: true);
-    for (final id in ids) {
-      await touch(id);
-    }
+    await touchProducts(ids);
   }
 
   /// Массовая наценка (+%) или скидка (−%) от текущих цен.
@@ -1163,9 +1268,8 @@ class AppDb {
       n++;
     }
     await b.commit(noResult: true);
-    for (final r in rows) {
-      await touch(r['product_id'] as String);
-    }
+    final updatedIds = rows.map((r) => r['product_id'] as String).toList();
+    await touchProducts(updatedIds);
     return n;
   }
 
@@ -1321,6 +1425,29 @@ class AppDb {
         'AND IFNULL(note,\'\') LIKE ?',
         [productId, '%$orderNumber%']);
     return (rows.first['q'] as num?)?.toDouble() ?? 0;
+  }
+
+  /// Батч-запрос возвращённого количества по позициям заказа.
+  Future<Map<String, double>> returnedQtysForOrder(
+      String orderNumber, List<String> productIds) async {
+    if (productIds.isEmpty) return {};
+    final map = <String, double>{};
+    for (var i = 0; i < productIds.length; i += 500) {
+      final chunk = productIds.sublist(
+          i, (i + 500 > productIds.length) ? productIds.length : i + 500);
+      final ph = List.filled(chunk.length, '?').join(',');
+      final rows = await database.rawQuery(
+          "SELECT product_id, SUM(qty) AS q FROM moves WHERE product_id IN ($ph) AND type = 'return' "
+          'AND IFNULL(note,\'\') LIKE ? GROUP BY product_id',
+          [...chunk, '%$orderNumber%']);
+      for (final r in rows) {
+        final pid = r['product_id'] as String?;
+        if (pid != null) {
+          map[pid] = (r['q'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+    }
+    return map;
   }
 
   /// Учесть продажу: минус остаток по ячейкам, плюс счётчик популярности,
@@ -1596,10 +1723,25 @@ class AppDb {
       'SELECT * FROM orders WHERE agent_id = ? AND created_at >= ? AND created_at < ? ORDER BY created_at DESC',
       [agentId, from, to],
     );
+    if (rows.isEmpty) return const [];
+    final orderIds = rows.map((r) => r['id'] as String).toList();
+    final linesByOrderId = <String, List<Map<String, Object?>>>{};
+    for (var i = 0; i < orderIds.length; i += 500) {
+      final chunk = orderIds.sublist(
+          i, (i + 500 > orderIds.length) ? orderIds.length : i + 500);
+      final ph = List.filled(chunk.length, '?').join(',');
+      final lineRows = await database.rawQuery(
+        'SELECT * FROM order_lines WHERE order_id IN ($ph) ORDER BY line_no ASC',
+        chunk,
+      );
+      for (final lr in lineRows) {
+        final oid = lr['order_id'] as String;
+        (linesByOrderId[oid] ??= []).add(lr);
+      }
+    }
     final result = <Order>[];
     for (final r in rows) {
-      final lines = await database
-          .query('order_lines', where: 'order_id = ?', whereArgs: [r['id']]);
+      final lines = linesByOrderId[r['id'] as String] ?? const [];
       result.add(Order(
         id: r['id'] as String,
         number: (r['number'] as String?) ?? '',
@@ -1636,8 +1778,13 @@ class AppDb {
   // ---- Отчёты ----
 
   Future<double> daySales(DateTime day, String agentId) async {
-    final orders = await ordersOfDay(day, agentId);
-    return orders.fold<double>(0.0, (s, o) => s + o.total);
+    final from = DateTime(day.year, day.month, day.day).toIso8601String();
+    final to = DateTime(day.year, day.month, day.day + 1).toIso8601String();
+    final rows = await database.rawQuery(
+      'SELECT SUM(total) AS s FROM orders WHERE agent_id = ? AND created_at >= ? AND created_at < ?',
+      [agentId, from, to],
+    );
+    return (rows.first['s'] as num?)?.toDouble() ?? 0.0;
   }
 
   Future<double> totalDebt() async {

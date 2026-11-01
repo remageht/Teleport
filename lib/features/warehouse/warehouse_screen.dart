@@ -363,11 +363,20 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   /// Сгенерировать штрих-коды тем выбранным, у кого их нет.
   Future<void> _bulkBarcodes() async {
     final db = context.read<AppDb>();
+    final missing = _items
+        .where((e) =>
+            _selected.contains(e.id) &&
+            (e.barcode == null || e.barcode!.isEmpty))
+        .toList();
     var n = 0;
-    for (final p in _items.where((e) => _selected.contains(e.id))) {
-      if (p.barcode != null && p.barcode!.isNotEmpty) continue;
-      await db.setBarcode(p.id, await db.generateBarcode());
-      n++;
+    if (missing.isNotEmpty) {
+      final codes = await db.generateBarcodes(missing.length);
+      final map = <String, String>{};
+      for (var i = 0; i < missing.length; i++) {
+        map[missing[i].id] = codes[i];
+      }
+      await db.setBarcodes(map);
+      n = missing.length;
     }
     await _load();
     if (mounted) {
@@ -381,15 +390,26 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   /// Напечатать ценники выбранных (коды догенерируются).
   Future<void> _bulkPrintTags() async {
     final db = context.read<AppDb>();
-    final labels = <({String name, double price, String? barcode})>[];
-    for (final p in _items.where((e) => _selected.contains(e.id))) {
-      var code = p.barcode;
-      if (code == null || code.isEmpty) {
-        code = await db.generateBarcode();
-        await db.setBarcode(p.id, code);
+    final selectedItems =
+        _items.where((e) => _selected.contains(e.id)).toList();
+    final missing = selectedItems
+        .where((e) => e.barcode == null || e.barcode!.isEmpty)
+        .toList();
+    final assignedCodes = <String, String>{};
+    if (missing.isNotEmpty) {
+      final codes = await db.generateBarcodes(missing.length);
+      for (var i = 0; i < missing.length; i++) {
+        assignedCodes[missing[i].id] = codes[i];
       }
-      labels.add((name: p.name, price: p.price, barcode: code));
+      await db.setBarcodes(assignedCodes);
     }
+    final labels = selectedItems
+        .map((p) => (
+              name: p.name,
+              price: p.price,
+              barcode: assignedCodes[p.id] ?? p.barcode,
+            ))
+        .toList();
     await _load();
     if (!mounted || labels.isEmpty) return;
     await PrinterSheet.printLabels(context, labels);

@@ -74,17 +74,25 @@ class ExportService {
       TextCellValue('Итого, ₽'),
     ]);
     final byDay = <String, List<double>>{};
+    final lineCountsQuery = await db.database.rawQuery('''
+      SELECT order_id, COUNT(*) AS c FROM order_lines
+      ${allTime ? '' : 'WHERE order_id IN (SELECT id FROM orders WHERE created_at >= ?)'}
+      GROUP BY order_id
+    ''', allTime ? null : [todayStart]);
+    final lineCounts = {
+      for (final r in lineCountsQuery)
+        (r['order_id'] as String): ((r['c'] as int?) ?? 0).toDouble()
+    };
     for (final o in orders) {
       final dt = DateTime.tryParse(o['created_at'] as String? ?? '');
       if (dt == null) continue;
       final key =
           '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
-      final cnt = await db.database.rawQuery(
-          'SELECT COUNT(*) AS c FROM order_lines WHERE order_id = ?',
-          [o['id']]);
+      final orderId = o['id'] as String?;
+      final count = orderId != null ? (lineCounts[orderId] ?? 0.0) : 0.0;
       final day = byDay.putIfAbsent(key, () => [0, 0, 0]);
       day[0] += 1;
-      day[1] += ((cnt.first['c'] as int?) ?? 0).toDouble();
+      day[1] += count;
       day[2] += (o['total'] as num?)?.toDouble() ?? 0;
     }
     var grand = 0.0;

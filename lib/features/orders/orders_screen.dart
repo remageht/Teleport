@@ -98,10 +98,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
   Future<void> _load() async {
     final db = context.read<AppDb>();
-    for (final l in widget.order.lines) {
-      _names[l.productId] ??= await db.productById(l.productId);
-      _returned[l.productId] = await db.returnedQty(
-          widget.order.number, l.productId);
+    final pids = widget.order.lines.map((l) => l.productId).toSet().toList();
+    if (pids.isNotEmpty) {
+      final products = await db.productsByIds(pids);
+      final returns =
+          await db.returnedQtysForOrder(widget.order.number, pids);
+      _names.addAll(products);
+      _returned.addAll(returns);
     }
     if (mounted) setState(() {});
   }
