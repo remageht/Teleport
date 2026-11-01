@@ -546,6 +546,7 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
             for (var i = 0; i < _lines.length; i++) ...[
               const SizedBox(height: 8),
               _LineCard(
+                key: ObjectKey(_lines[i]),
                 line: _lines[i],
                 recognized: _recognized,
                 onName: (v) => _lines[i].rawName = v,
@@ -637,6 +638,7 @@ class _LineCard extends StatefulWidget {
   final ValueChanged<String> onPick;
   final VoidCallback onDelete;
   const _LineCard({
+    super.key,
     required this.line,
     required this.recognized,
     required this.onName,
@@ -663,6 +665,25 @@ class _LineCardState extends State<_LineCard> {
             widget.line.qty % 1 == 0 ? 0 : 2));
     _price = TextEditingController(
         text: widget.line.price.toStringAsFixed(2));
+  }
+
+  @override
+  void didUpdateWidget(covariant _LineCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.line != widget.line) {
+      if (_name.text != widget.line.rawName) {
+        _name.text = widget.line.rawName;
+      }
+      final newQtyStr = widget.line.qty.toStringAsFixed(
+          widget.line.qty % 1 == 0 ? 0 : 2);
+      if (_qty.text != newQtyStr) {
+        _qty.text = newQtyStr;
+      }
+      final newPriceStr = widget.line.price.toStringAsFixed(2);
+      if (_price.text != newPriceStr) {
+        _price.text = newPriceStr;
+      }
+    }
   }
 
   @override
@@ -734,7 +755,34 @@ class _LineCardState extends State<_LineCard> {
             ),
             if (widget.recognized) ...[
               const SizedBox(height: 6),
-              if (isDup)
+              DropdownButton<String>(
+                value: l.pick,
+                isExpanded: true,
+                items: [
+                  if (l.exact != null)
+                    DropdownMenuItem(
+                      value: l.exact!.id,
+                      child: Text(
+                          '→ ${l.exact!.name} (в базе)',
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  for (final c in l.candidates)
+                    if (c.id != l.exact?.id)
+                      DropdownMenuItem(
+                        value: c.id,
+                        child: Text('→ ${c.name}',
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                  const DropdownMenuItem(
+                      value: 'new',
+                      child: Text('+ Новый товар')),
+                ],
+                onChanged: (v) {
+                  if (v != null) widget.onPick(v);
+                },
+              ),
+              if (isDup) ...[
+                const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 4),
@@ -743,40 +791,14 @@ class _LineCardState extends State<_LineCard> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Найден в базе — количество плюсуется',
+                    'Товар в базе — остаток будет увеличен при приёмке',
                     style: TextStyle(
                         color: Colors.green.shade800,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
                   ),
-                )
-              else
-                DropdownButton<String>(
-                  value: l.pick,
-                  isExpanded: true,
-                  items: [
-                    if (l.exact != null)
-                      DropdownMenuItem(
-                        value: l.exact!.id,
-                        child: Text(
-                            '→ ${l.exact!.name} (в базе)',
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                    for (final c in l.candidates)
-                      if (c.id != l.exact?.id)
-                        DropdownMenuItem(
-                          value: c.id,
-                          child: Text('→ ${c.name}',
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                    const DropdownMenuItem(
-                        value: 'new',
-                        child: Text('+ Новый товар')),
-                  ],
-                  onChanged: (v) {
-                    if (v != null) widget.onPick(v);
-                  },
                 ),
+              ],
             ],
           ],
         ),

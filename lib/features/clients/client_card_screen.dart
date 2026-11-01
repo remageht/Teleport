@@ -29,7 +29,11 @@ class _ClientCardScreenState extends State<ClientCardScreen> {
     final lists = await context.read<AppDb>().priceLists();
     if (mounted) {
       var id = _listId;
-      if (lists.every((l) => l['id'] != id)) id = 'pl-base';
+      if (lists.isNotEmpty && lists.every((l) => l['id'] != id)) {
+        id = lists.any((l) => l['id'] == 'pl-base')
+            ? 'pl-base'
+            : lists.first['id'] as String;
+      }
       setState(() {
         _lists = lists;
         _listId = id;
@@ -71,7 +75,11 @@ class _ClientCardScreenState extends State<ClientCardScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButton<String>(
-                          value: _listId,
+                          value: _lists.any((l) => l['id'] == _listId)
+                              ? _listId
+                              : (_lists.isNotEmpty
+                                  ? _lists.first['id'] as String
+                                  : null),
                           isExpanded: true,
                           items: [
                             for (final l in _lists)
