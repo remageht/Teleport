@@ -389,44 +389,54 @@ class _ReceiptEditScreenState extends State<ReceiptEditScreen> {
     if (_lines.isEmpty) return;
     final db = context.read<AppDb>();
     setState(() => _busy = true);
-    final rid = await db.createReceipt(
-      number:
-          _number.text.trim().isEmpty ? null : _number.text.trim(),
-      supplier: _supplier.text.trim().isEmpty
-          ? null
-          : _supplier.text.trim(),
-      photoPath: _photoPath,
-    );
-    for (final l in _lines) {
-      String pid;
-      if (l.pick == 'new') {
-        final created = await db.addProduct(
-          name: l.rawName.trim(),
-          qty: 0,
+    try {
+      await db.database.transaction((txn) async {
+        final rid = await db.createReceipt(
+          number: _number.text.trim().isEmpty ? null : _number.text.trim(),
+          supplier: _supplier.text.trim().isEmpty ? null : _supplier.text.trim(),
+          photoPath: _photoPath,
+          executor: txn,
         );
-        pid = created.id;
-      } else {
-        pid = l.pick;
+        for (final l in _lines) {
+          String pid;
+          if (l.pick == 'new') {
+            final created = await db.addProduct(
+              name: l.rawName.trim(),
+              qty: 0,
+              executor: txn,
+            );
+            pid = created.id;
+          } else {
+            pid = l.pick;
+          }
+          await db.receiveGoods(
+            productId: pid,
+            qty: l.qty,
+            buyPrice: l.price,
+            note: [
+              if (_supplier.text.trim().isNotEmpty) _supplier.text.trim(),
+              if (_number.text.trim().isNotEmpty) 'накл. ${_number.text.trim()}',
+            ].join(', '),
+            receiptId: rid,
+            executor: txn,
+          );
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Принято: ${_lines.length} поз. на ${_total.toStringAsFixed(0)} ₽')));
+        Navigator.pop(context, true);
       }
-      await db.receiveGoods(
-        productId: pid,
-        qty: l.qty,
-        buyPrice: l.price,
-        note: [
-          if (_supplier.text.trim().isNotEmpty)
-            _supplier.text.trim(),
-          if (_number.text.trim().isNotEmpty)
-            'накл. ${_number.text.trim()}',
-        ].join(', '),
-        receiptId: rid,
-      );
-    }
-    if (mounted) {
-      setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Принято: ${_lines.length} поз. на ${_total.toStringAsFixed(0)} ₽')));
-      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка при проведении: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
     }
   }
 
