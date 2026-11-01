@@ -32,16 +32,23 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   Future<void> _load() async {
-    final all = await context.read<AppDb>().allClients();
-    final q = _search.text.toLowerCase();
-    _clients = all
-        .where((c) =>
-            (_dayFilter == 0 || c.routeDay == _dayFilter) &&
-            (q.isEmpty ||
-                c.name.toLowerCase().contains(q) ||
-                (c.address ?? '').toLowerCase().contains(q)))
-        .toList();
-    if (mounted) setState(() {});
+    try {
+      final all = await context.read<AppDb>().allClients();
+      final q = _search.text.toLowerCase();
+      _clients = all
+          .where((c) =>
+              (_dayFilter == 0 || c.routeDay == _dayFilter) &&
+              (q.isEmpty ||
+                  c.name.toLowerCase().contains(q) ||
+                  (c.address ?? '').toLowerCase().contains(q)))
+          .toList();
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка загрузки клиентов: $e')));
+      }
+    }
   }
 
   @override

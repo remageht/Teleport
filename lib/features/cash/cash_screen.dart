@@ -40,19 +40,28 @@ class _CashScreenState extends State<CashScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final s = await db.cashDay(_day);
-    final moves = await db.cashMoves(_day);
-    if (!mounted) return;
-    setState(() {
-      _opening = s.opening;
-      _sales = s.sales;
-      _cashIn = s.cashIn;
-      _cashOut = s.cashOut;
-      _moves = moves;
-      _closed = moves.any((m) => m['kind'] == 'close');
-      _loading = false;
-    });
+    try {
+      final db = context.read<AppDb>();
+      final s = await db.cashDay(_day);
+      final moves = await db.cashMoves(_day);
+      if (!mounted) return;
+      setState(() {
+        _opening = s.opening;
+        _sales = s.sales;
+        _cashIn = s.cashIn;
+        _cashOut = s.cashOut;
+        _moves = moves;
+        _closed = moves.any((m) => m['kind'] == 'close');
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки кассы: $e')),
+        );
+      }
+    }
   }
 
   double get _cashSales => _sales['cash'] ?? 0;
@@ -90,8 +99,15 @@ class _CashScreenState extends State<CashScreen> {
         ),
       );
       if (v == null) return;
-      await db.addCashMove(day: _day, kind: 'open', amount: v);
-      await _load();
+      try {
+        await db.addCashMove(day: _day, kind: 'open', amount: v);
+        await _load();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Ошибка открытия дня: $e')));
+        }
+      }
     } finally {
       ctrl.dispose();
     }
@@ -175,16 +191,23 @@ class _CashScreenState extends State<CashScreen> {
         }
         return;
       }
-      await db.addCashMove(
-            day: _day,
-            kind: kind,
-            method: method,
-            amount: v,
-            note: note.text.trim().isEmpty
-                ? null
-                : note.text.trim(),
-          );
-      await _load();
+      try {
+        await db.addCashMove(
+              day: _day,
+              kind: kind,
+              method: method,
+              amount: v,
+              note: note.text.trim().isEmpty
+                  ? null
+                  : note.text.trim(),
+            );
+        await _load();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Ошибка записи операции: $e')));
+        }
+      }
     } finally {
       amount.dispose();
       note.dispose();
@@ -232,18 +255,25 @@ class _CashScreenState extends State<CashScreen> {
         ),
       );
       if (actual == null) return;
-      await db.addCashMove(
-          day: _day,
-          kind: 'close',
-          amount: actual,
-          note:
-              'расхождение ${(actual - _expected).toStringAsFixed(2)}');
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(actual >= _expected
-                ? 'День закрыт. Излишек ${(actual - _expected).toStringAsFixed(2)} ₽'
-                : 'День закрыт. Недостача ${(_expected - actual).toStringAsFixed(2)} ₽')));
+      try {
+        await db.addCashMove(
+            day: _day,
+            kind: 'close',
+            amount: actual,
+            note:
+                'расхождение ${(actual - _expected).toStringAsFixed(2)}');
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(actual >= _expected
+                  ? 'День закрыт. Излишек ${(actual - _expected).toStringAsFixed(2)} ₽'
+                  : 'День закрыт. Недостача ${(_expected - actual).toStringAsFixed(2)} ₽')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Ошибка закрытия дня: $e')));
+        }
       }
     } finally {
       ctrl.dispose();

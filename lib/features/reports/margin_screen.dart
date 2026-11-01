@@ -32,13 +32,24 @@ class _MarginScreenState extends State<MarginScreen> {
   }
 
   Future<void> _load() async {
-    final rows =
-        await context.read<AppDb>().marginReport(limit: 200);
-    if (mounted) {
-      setState(() {
-        _rows = rows;
-        _loading = false;
-      });
+    try {
+      final rows =
+          await context.read<AppDb>().marginReport(limit: 200);
+      if (mounted) {
+        setState(() {
+          _rows = rows;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка загрузки маржи: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 

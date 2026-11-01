@@ -97,16 +97,24 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 
   Future<void> _load() async {
-    final db = context.read<AppDb>();
-    final pids = widget.order.lines.map((l) => l.productId).toSet().toList();
-    if (pids.isNotEmpty) {
-      final products = await db.productsByIds(pids);
-      final returns =
-          await db.returnedQtysForOrder(widget.order.number, pids);
-      _names.addAll(products);
-      _returned.addAll(returns);
+    try {
+      final db = context.read<AppDb>();
+      final pids =
+          widget.order.lines.map((l) => l.productId).toSet().toList();
+      if (pids.isNotEmpty) {
+        final products = await db.productsByIds(pids);
+        final returns =
+            await db.returnedQtysForOrder(widget.order.number, pids);
+        _names.addAll(products);
+        _returned.addAll(returns);
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка загрузки данных заказа: $e')));
+      }
     }
-    if (mounted) setState(() {});
   }
 
   double get _refunded => widget.order.lines.fold(
