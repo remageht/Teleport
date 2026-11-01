@@ -27,17 +27,7 @@ class _ReceiptsScreenState extends State<ReceiptsScreen> {
   Future<void> _load() async {
     final db = context.read<AppDb>();
     final docs = await db.receipts();
-    final stats = <String, ({int lines, double total})>{};
-    for (final d in docs) {
-      final moves = await db.receiptMoves(d['id'] as String);
-      var total = 0.0;
-      for (final m in moves) {
-        total += ((m['qty'] as num?)?.toDouble() ?? 0) *
-            ((m['price'] as num?)?.toDouble() ?? 0);
-      }
-      stats[d['id'] as String] =
-          (lines: moves.length, total: total);
-    }
+    final stats = await db.receiptsStats();
     if (mounted) {
       setState(() {
         _docs = docs;
