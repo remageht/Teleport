@@ -1533,6 +1533,60 @@ class AppDb {
     return (rows.first['price'] as num?)?.toDouble() ?? 0;
   }
 
+  /// Проведение инвентаризации / ревизии склада.
+  /// Принимает список элементов с фактическим и учетным остатком.
+  /// В единой транзакции:
+  /// - Обновляет stocks до actualQty.
+  /// - Если actualQty != expectedQty, создает запись в moves с type: 'count' и разницей.
+  /// - Вызывает touch(productId).
+  Future<void> applyInventoryAudit(
+    List<({String productId, String warehouseId, double actualQty, double expectedQty, String? cell})> items,
+  ) async {
+    if (items.isEmpty) return;
+    await database.transaction((txn) async {
+      for (final item in items) {
+        final diff = item.actualQty - item.expectedQty;
+        final existing = await txn.query(
+          'stocks',
+          where: 'product_id = ? AND warehouse_id = ?',
+          whereArgs: [item.productId, item.warehouseId],
+        );
+
+        if (existing.isEmpty) {
+          await txn.insert('stocks', {
+            'product_id': item.productId,
+            'warehouse_id': item.warehouseId,
+            'cell': item.cell ?? 'Склад',
+            'qty': item.actualQty,
+            'reserved': 0,
+          });
+        } else {
+          final first = existing.first;
+          await txn.update(
+            'stocks',
+            {'qty': item.actualQty},
+            where: 'product_id = ? AND warehouse_id = ? AND IFNULL(cell, \'\') = IFNULL(?, \'\')',
+            whereArgs: [item.productId, item.warehouseId, first['cell']],
+          );
+        }
+
+        if (diff.abs() > 0.0001) {
+          final note = diff > 0
+              ? 'Излишек при ревизии (+${diff == diff.roundToDouble() ? diff.toStringAsFixed(0) : diff.toStringAsFixed(2)})'
+              : 'Недостача при ревизии (${diff == diff.roundToDouble() ? diff.toStringAsFixed(0) : diff.toStringAsFixed(2)})';
+          await logMove(
+            productId: item.productId,
+            type: 'count',
+            qty: diff,
+            note: note,
+            executor: txn,
+          );
+        }
+        await touch(item.productId, executor: txn);
+      }
+    });
+  }
+
   // ---- Пороги остатков ----
 
   Future<void> setMinQty(String productId, double qty) async {
