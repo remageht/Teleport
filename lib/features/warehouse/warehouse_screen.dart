@@ -15,6 +15,7 @@ import '../shared/printer_sheet.dart';
 import '../shared/product_image.dart';
 import '../shared/voice_sheet.dart';
 import 'catalogs_screen.dart';
+import 'inventory_screen.dart';
 import 'product_detail_screen.dart';
 
 /// Склад магазина: поиск, сканер, сетка карточек (WB/Ozon-стиль),
@@ -693,6 +694,24 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                                 const CatalogsScreen()),
                       );
                       await _loadCats();
+                      await _load();
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.fact_check_outlined,
+                        size: 16, color: AppTheme.brand),
+                    label: const Text('Ревизия'),
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              InventoryScreen(initialCategoryId: _catId),
+                        ),
+                      );
                       await _load();
                     },
                   ),

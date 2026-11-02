@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:excel/excel.dart';
@@ -309,5 +310,11 @@ class ExportService {
     } catch (e) {
       return 'Ошибка сохранения: $e';
     }
+  }
+
+  /// Сохранить текстовый документ и открыть «Поделиться».
+  Future<String> saveTextDocument(String fileName, String content) async {
+    return _saveAndShare(
+        utf8.encode(content), fileName, 'Документ: $fileName');
   }
 }
