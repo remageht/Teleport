@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../models/trade.dart';
 import '../../services/devices.dart';
 
 /// Общий сценарий печати ценников: на десктопе — сразу в файл,
@@ -11,6 +12,82 @@ import '../../services/devices.dart';
 /// (MAC запоминается).
 class PrinterSheet {
   static const _macKey = 'printer_mac';
+
+  /// Печать товарного чека заказа на Bluetooth-принтер или в файл на десктопе.
+  static Future<void> printOrderReceipt(
+    BuildContext context,
+    Order order, {
+    bool invoice = false,
+  }) async {
+    try {
+      final printer = ReceiptPrinter();
+      if (kIsWeb ||
+          Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS) {
+        await printer.printReceipt(order, invoice: invoice);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Чек ${order.number} сохранён в файл')),
+          );
+        }
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      var mac = prefs.getString(_macKey);
+      if (mac == null || mac.isEmpty) {
+        final devices = await printer.scanDevices();
+        if (!context.mounted) return;
+        if (devices.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'Нет спаренных принтеров — спарьте в настройках Bluetooth')));
+          return;
+        }
+        mac = await showModalBottomSheet<String>(
+          context: context,
+          builder: (c) => SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Выберите принтер для чека',
+                      style: Theme.of(context).textTheme.titleMedium),
+                ),
+                for (final d in devices)
+                  ListTile(
+                    leading: const Icon(Icons.print_outlined),
+                    title: Text(_nameOf(d)),
+                    subtitle: Text(_macOf(d)),
+                    onTap: () => Navigator.pop(c, _macOf(d)),
+                  ),
+              ],
+            ),
+          ),
+        );
+        if (mac == null || mac.isEmpty) return;
+        await prefs.setString(_macKey, mac);
+      }
+      final ok = await printer.connect(mac);
+      if (!context.mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Не удалось подключиться к принтеру')));
+        return;
+      }
+      await printer.printReceipt(order, invoice: invoice);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Чек ${order.number} напечатан')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка печати чека: $e')));
+      }
+    }
+  }
 
   static Future<void> printLabels(
     BuildContext context,

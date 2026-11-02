@@ -140,9 +140,14 @@ class AnimBar extends StatelessWidget {
 class SuccessScreen extends StatefulWidget {
   final String title;
   final String subtitle;
+  final VoidCallback? onPrint;
 
-  const SuccessScreen(
-      {super.key, required this.title, required this.subtitle});
+  const SuccessScreen({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    this.onPrint,
+  });
 
   @override
   State<SuccessScreen> createState() => _SuccessScreenState();
@@ -158,7 +163,10 @@ class _SuccessScreenState extends State<SuccessScreen>
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 1600), () {
+    final delay = widget.onPrint != null
+        ? const Duration(milliseconds: 2800)
+        : const Duration(milliseconds: 1600);
+    Future.delayed(delay, () {
       if (mounted) Navigator.pop(context);
     });
   }
@@ -234,6 +242,21 @@ class _SuccessScreenState extends State<SuccessScreen>
                       style: const TextStyle(
                           color: Colors.white70, fontSize: 16)),
                 ),
+                if (widget.onPrint != null) ...[
+                  const SizedBox(height: 16),
+                  FadeTransition(
+                    opacity: _c,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white70),
+                      ),
+                      onPressed: widget.onPrint,
+                      icon: const Icon(Icons.print_outlined, size: 20),
+                      label: const Text('Печать чека'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],

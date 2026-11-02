@@ -8,7 +8,9 @@ import '../../../models/catalog.dart';
 import '../../../models/trade.dart';
 import '../shared/barcode_scan_sheet.dart';
 import '../shared/anim.dart';
+import '../shared/printer_sheet.dart';
 import '../shared/product_image.dart';
+import 'widgets/pos_cash_checkout_sheet.dart';
 
 /// Оформление продажи/заказа: поиск или скан товара, позиции,
 /// оплата, итог. При van-selling списывает остаток и поднимает
@@ -180,6 +182,25 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
 
   Future<void> _save() async {
     if (_lines.isEmpty || _saving) return;
+
+    double? changeAmount;
+    var shouldPrint = false;
+
+    // Быстрый кассовый режим при наличной оплате реализации
+    if (_payType == PayType.cash && _type == OrderType.realization) {
+      final checkoutResult = await PosCashCheckoutSheet.show(
+        context,
+        total: _total,
+        clientName: widget.client?.name ?? _clientName,
+      );
+      if (checkoutResult == null || !checkoutResult.confirmed) {
+        return;
+      }
+      changeAmount = checkoutResult.change;
+      shouldPrint = checkoutResult.printReceipt;
+    }
+
+    if (!mounted) return;
     setState(() => _saving = true);
     try {
       final session = context.read<Session>();
@@ -200,13 +221,23 @@ class _OrderEditScreenState extends State<OrderEditScreen> {
       );
       await db.saveOrderWithStock(order, warehouseId: _warehouseId);
       if (!mounted) return;
-      // Живой экран успеха: галочка + сумма, авто-возврат.
+
+      if (shouldPrint) {
+        PrinterSheet.printOrderReceipt(context, order);
+      }
+
+      final subtitleText = changeAmount != null && changeAmount > 0
+          ? '${_total.toStringAsFixed(2)} ₽ · Сдача: ${changeAmount.toStringAsFixed(2)} ₽'
+          : '${_total.toStringAsFixed(2)} ₽ · ${_lines.length} позиций';
+
+      // Живой экран успеха: галочка + сумма/сдача, кнопка печати чека, авто-возврат.
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => SuccessScreen(
             title: _type == OrderType.realization ? 'Продажа проведена' : 'Заказ сохранён',
-            subtitle: '${_total.toStringAsFixed(2)} ₽ · ${_lines.length} позиций',
+            subtitle: subtitleText,
+            onPrint: () => PrinterSheet.printOrderReceipt(context, order),
           ),
         ),
       );
